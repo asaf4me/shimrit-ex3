@@ -1,4 +1,6 @@
 #include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /**
  * threadpool.h
@@ -9,6 +11,13 @@
 
 // maximum number of threads allowed in a pool
 #define MAXT_IN_POOL 200
+#define ERROR -1
+
+typedef enum
+{
+    false,
+    true
+} bool;
 
 
 /**
