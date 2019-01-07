@@ -137,12 +137,11 @@ void destroy_threadpool(threadpool *destroyme) // Debug and test with valgring
     while (destroyme->qsize > 0) /* wait for work queue to get empty */
         pthread_cond_wait(&destroyme->q_empty, &destroyme->qlock);
     destroyme->shutdown = 1;
-    pthread_cond_broadcast(&(destroyme->q_not_empty));
+    pthread_cond_broadcast(&(destroyme->q_not_empty));/* wake up all worker threads */
     pthread_mutex_unlock(&(destroyme->qlock));
 
     for (int i = 0; i < destroyme->num_threads; i++) /* Join all worker thread */
     {
-        pthread_cond_broadcast(&(destroyme->q_not_empty)); /* wake up all worker threads */
         pthread_join(destroyme->threads[i], &nothing);
     }
 
