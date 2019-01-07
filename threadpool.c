@@ -7,19 +7,24 @@ threadpool *create_threadpool(int num_threads_in_pool)
     threadpool *pool = (threadpool *)malloc(sizeof(threadpool));
     if (pool == NULL)
         return NULL;
+
     pool->num_threads = num_threads_in_pool;
     pool->qsize = 0;
-    pool->threads = (pthread_t *)malloc(num_threads_in_pool * sizeof(pthread_t));
+    pool->shutdown = pool->dont_accept = 0;
+    pool->qhead = NULL;
+    pool->qtail = NULL;
+
+    pthread_mutex_init(&pool->qlock, NULL);
+    pthread_cond_init(&pool->q_empty, NULL);
+    pthread_cond_init(&pool->q_not_empty, NULL);
+
+    pool->threads = (pthread_t *)malloc(pool->num_threads * sizeof(pthread_t));
     if (pool == NULL)
     {
         destroy_threadpool(pool);
         return NULL;
     }
-    pool->qhead = NULL;
-    pool->qtail = NULL;
-    pthread_mutex_init(&pool->qlock, NULL);
-    pthread_cond_init(&pool->q_empty, NULL);
-    pthread_cond_init(&pool->q_not_empty, NULL);
+
     for (int i = 0; i < pool->num_threads; i++)
     {
         if (pthread_create(&pool->threads[i], NULL, do_work, (void *)pool))
@@ -28,7 +33,7 @@ threadpool *create_threadpool(int num_threads_in_pool)
             return NULL;
         }
     }
-    pool->shutdown = pool->dont_accept = 0;
+    
     return pool;
 }
 
@@ -77,6 +82,7 @@ work_t *dequeue(threadpool *pool)
 void *do_work(void *p)
 {
     threadpool *pool = (threadpool *)p;
+    work_t *worker = NULL;
     while (true)
     {
         pthread_mutex_lock(&(pool->qlock));
@@ -86,8 +92,10 @@ void *do_work(void *p)
             pthread_exit(NULL);
             break;
         }
-        if (pool->qsize == 0 && pool->dont_accept == 0)
+        if (pool->qsize == 0 && pool->dont_accept == 0 && pool->shutdown == 0)
+        {
             pthread_cond_wait(&(pool->q_not_empty), &(pool->qlock));
+        }
 
         if (pool->shutdown == 1)
         {
@@ -96,7 +104,7 @@ void *do_work(void *p)
             break;
         }
 
-        work_t *worker = dequeue(pool);
+        worker = dequeue(pool);
         if (worker != NULL)
         {
             (worker->routine)(worker->arg);
