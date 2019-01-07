@@ -6,7 +6,10 @@ threadpool *create_threadpool(int num_threads_in_pool)
         return NULL;
     threadpool *pool = (threadpool *)malloc(sizeof(threadpool));
     if (pool == NULL)
+    {
+        fprintf(stderr, "malloc failed at create threadpool <threadpool>");
         return NULL;
+    }
 
     pool->num_threads = num_threads_in_pool;
     pool->qsize = 0;
@@ -21,7 +24,7 @@ threadpool *create_threadpool(int num_threads_in_pool)
     pool->threads = (pthread_t *)malloc(pool->num_threads * sizeof(pthread_t));
     if (pool == NULL)
     {
-        destroy_threadpool(pool);
+        fprintf(stderr, "malloc failed at create threadpool <threads *>");
         return NULL;
     }
 
@@ -29,18 +32,18 @@ threadpool *create_threadpool(int num_threads_in_pool)
     {
         if (pthread_create(&pool->threads[i], NULL, do_work, (void *)pool))
         {
-            destroy_threadpool(pool);
+            fprintf(stderr, "failed to init threads");
             return NULL;
         }
     }
-    
+
     return pool;
 }
 
 void dispatch(threadpool *from_me, dispatch_fn dispatch_to_here, void *arg)
 {
     pthread_mutex_lock(&from_me->qlock);
-    if (from_me->dont_accept == 1)
+    if (from_me->dont_accept == 1 || from_me == NULL)
     {
         pthread_mutex_unlock(&(from_me->qlock));
         return;
@@ -48,6 +51,7 @@ void dispatch(threadpool *from_me, dispatch_fn dispatch_to_here, void *arg)
     work_t *work = (work_t *)malloc(sizeof(work_t));
     if (work == NULL)
     {
+        fprintf(stderr, "malloc failed at dispatch");
         pthread_mutex_unlock(&(from_me->qlock));
         return;
     }
@@ -125,21 +129,28 @@ void *do_work(void *p)
 
 void destroy_threadpool(threadpool *destroyme) // Debug and test with valgring
 {
+    void *nothing;
     if (destroyme == NULL)
         return;
     pthread_mutex_lock(&(destroyme->qlock));
-    destroyme->dont_accept = 1; /* rise up the dont accept flag */
-    if (destroyme->qsize > 0)   /* wait for work queue to get empty */
+    destroyme->dont_accept = 1;  /* rise up the dont accept flag */
+    while (destroyme->qsize > 0) /* wait for work queue to get empty */
         pthread_cond_wait(&destroyme->q_empty, &destroyme->qlock);
     destroyme->shutdown = 1;
+    pthread_cond_broadcast(&(destroyme->q_not_empty));
     pthread_mutex_unlock(&(destroyme->qlock));
-    pthread_cond_broadcast(&(destroyme->q_not_empty)); /* wake up all worker threads */
-    for (int i = 0; i < destroyme->num_threads; i++)   /* Join all worker thread */
-        pthread_join(destroyme->threads[i], NULL);
+
+    for (int i = 0; i < destroyme->num_threads; i++) /* Join all worker thread */
+    {
+        pthread_cond_broadcast(&(destroyme->q_not_empty)); /* wake up all worker threads */
+        pthread_join(destroyme->threads[i], &nothing);
+    }
+
     if (destroyme->threads)
         free(destroyme->threads);
+
+    pthread_mutex_destroy(&(destroyme->qlock));
     pthread_cond_destroy(&(destroyme->q_empty));
     pthread_cond_destroy(&(destroyme->q_not_empty));
-    pthread_mutex_destroy(&(destroyme->qlock));
     free(destroyme);
 }
