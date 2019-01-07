@@ -129,7 +129,7 @@ void *do_work(void *p)
 
 void destroy_threadpool(threadpool *destroyme) // Debug and test with valgring
 {
-    void *nothing;
+    void *do_nothing;
     if (destroyme == NULL)
         return;
     pthread_mutex_lock(&(destroyme->qlock));
@@ -142,7 +142,7 @@ void destroy_threadpool(threadpool *destroyme) // Debug and test with valgring
 
     for (int i = 0; i < destroyme->num_threads; i++) /* Join all worker thread */
     {
-        pthread_join(destroyme->threads[i], &nothing);
+        pthread_join(destroyme->threads[i], &do_nothing);
     }
 
     if (destroyme->threads)
