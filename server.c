@@ -231,7 +231,7 @@ char *get_mime_type(char *name)
     return NULL;
 }
 
-/* Checkong for requested path */
+/* Checking for requested path */
 int is_exist()
 {
     return !ERROR;
@@ -243,7 +243,7 @@ int parsing(char req[], char *method[], char *path[], char *version[])
     char *temp;
     char **parsed = malloc(BUFF * sizeof(char *));
     if (parsed == NULL)
-        return ERROR;
+        return ALLOC_ERROR;
     int position = 0;
     char *end = strstr(req, "\r\n");
     end[0] = '\0';
@@ -304,7 +304,7 @@ CLOSE:
 /* Main */
 int main(int argc, char *argv[])
 {
-    if (argc != 4) /*Verify for right input */
+    if (argc != 4) /* Verify for right input */
     {
         usage_message();
         return EXIT_FAILURE;
