@@ -15,13 +15,11 @@
 /* DEFINES */
 
 #define ERROR -1
+#define ALLOC_ERROR -2
 #define BUFF 4000
 #define SERVER_PROTOCOL "webserver/1.1"
+#define SERVER_HTTP "HTTP/1.1"
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
-// time_t now;
-// char timebuf[128];
-// now = time(NULL);
-// strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
 
 #define HTTP_400                                  \
     "<HTML>"                                      \
@@ -74,6 +72,27 @@
 
 /* END DEFINES */
 
+/* Wrinting to the socket */
+int write_to_socket(int sock, char *msg)
+{
+    int bytes = 0, sum = 0;
+    const char *pointer = msg;
+    size_t length = strlen(msg);
+    while (true)
+    {
+        bytes = write(sock, pointer, length);
+        sum += bytes;
+        if (sum == strlen(msg))
+            break;
+        if (bytes < 0)
+        {
+            perror("write");
+            return ERROR;
+        }
+    }
+    return sum;
+}
+
 void usage_message()
 {
     printf("Usage: server <port> <pool-size> <max-number-of-request>\n");
@@ -92,16 +111,82 @@ int get_int(char *argv)
     return port;
 }
 
+void internal_error(int socket)
+{
+    time_t now;
+    char timebuf[128];
+    memset(timebuf, 0, 128);
+    now = time(NULL);
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    char response[BUFF];
+    memset(response, 0, BUFF);
+    snprintf(response, sizeof(response),
+             "%s 500 Internal Server Error\r\n"
+             "Server: %s\r\n"
+             "Date: %s\r\n"
+             "Content-Type: text/html; charset=utf-8\r\n"
+             "Content-Length: %ld\r\n"
+             "Connection: close\r\n\r\n"
+             "%s",
+             SERVER_HTTP, SERVER_PROTOCOL,
+             timebuf, strlen(HTTP_500), HTTP_500);
+    if (write_to_socket(socket, response) == ERROR)
+        internal_error(socket);
+}
+
+void bad_req(int socket)
+{
+    time_t now;
+    char timebuf[128];
+    memset(timebuf, 0, 128);
+    now = time(NULL);
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    char response[BUFF];
+    memset(response, 0, BUFF);
+    snprintf(response, sizeof(response),
+             "%s 400 Bad Request\r\n"
+             "Server: %s\r\n"
+             "Date: %s\r\n"
+             "Content-Type: text/html; charset=utf-8\r\n"
+             "Content-Length: %ld\r\n"
+             "Connection: close\r\n\r\n"
+             "%s",
+             SERVER_HTTP, SERVER_PROTOCOL,
+             timebuf, strlen(HTTP_400), HTTP_400);
+    if (write_to_socket(socket, response) == ERROR)
+        internal_error(socket);
+}
+
+void not_supported(int socket)
+{
+    time_t now;
+    char timebuf[128];
+    memset(timebuf, 0, 128);
+    now = time(NULL);
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    char response[BUFF];
+    memset(response, 0, BUFF);
+    snprintf(response, sizeof(response),
+             "%s 501 Not supported\r\n"
+             "Server: %s\r\n"
+             "Date: %s\r\n"
+             "Content-Type: text/html; charset=utf-8\r\n"
+             "Content-Length: %ld\r\n"
+             "Connection: close\r\n\r\n"
+             "%s",
+             SERVER_HTTP, SERVER_PROTOCOL,
+             timebuf, strlen(HTTP_501), HTTP_501);
+    if (write_to_socket(socket, response) == ERROR)
+        internal_error(socket);
+}
+
 /* Parsing the requast */
 int parsing(char req[], char *method[], char *path[], char *version[])
 {
     char *temp;
     char **parsed = malloc(BUFF * sizeof(char *));
     if (parsed == NULL)
-    {
-        //ERROR 500
         return ERROR;
-    }
     int position = 0;
     char *end = strstr(req, "\r\n");
     end[0] = '\0';
@@ -113,9 +198,12 @@ int parsing(char req[], char *method[], char *path[], char *version[])
         temp = strtok(NULL, " ");
     }
     parsed[position] = NULL;
-    *method = parsed[0],*path = parsed[1],*version =  parsed[2];
-    if(!method || !path || !version)
+    *method = parsed[0], *path = parsed[1], *version = parsed[2];
+    if (*method == NULL || *path == NULL || *version == NULL)
+    {
+        free(parsed);
         return ERROR;
+    }
     free(parsed);
     return !ERROR;
 }
@@ -125,44 +213,35 @@ int process_request(void *arg)
 {
     int newfd = *(int *)arg, bytes;
     char buffer[BUFF];
-    char *method, *path, *version;
+    char *method = NULL, *path = NULL, *version = NULL;
     memset(buffer, 0, BUFF);
     if ((bytes = read(newfd, buffer, sizeof(buffer))) == -1)
     {
         perror("read");
-        return ERROR;
+        internal_error(newfd);
+        goto CLOSE;
     }
-    if(parsing(buffer, &method, &path, &version) == ERROR)
+    int parse = parsing(buffer, &method, &path, &version);
+    if (parse == ALLOC_ERROR)
     {
-        //Bad req;
-        return ERROR;
+        internal_error(newfd);
+        goto CLOSE;
     }
-    printf("method is %s path is %s version is %s\n", method, path, version);
-    // write_to_socket(newfd, 0);
+    if (parse == ERROR)
+    {
+        bad_req(newfd);
+        goto CLOSE;
+    }
+    if (strcmp(method, "POST") == 0)
+    {
+        not_supported(newfd);
+        goto CLOSE;
+    }
+
+CLOSE:
     free(arg);
     close(newfd);
     return !ERROR;
-}
-
-/* Wrinting to the socket */
-int write_to_socket(int sock, char *msg)
-{
-    int bytes, sum;
-    const char *pointer = msg;
-    size_t length = strlen(msg);
-    while (true)
-    {
-        bytes = write(sock, pointer, length);
-        sum += bytes;
-        if (sum == strlen(msg))
-            break;
-        if (bytes < 0)
-        {
-            perror("write");
-            return ERROR;
-        }
-    }
-    return sum;
 }
 
 /* Main */
