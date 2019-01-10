@@ -1,3 +1,15 @@
+#include <pthread.h>
+#include <assert.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include "threadpool.h"
 
 threadpool *create_threadpool(int num_threads_in_pool)
@@ -120,6 +132,7 @@ void *do_work(void *p)
         {
             pthread_mutex_unlock(&(pool->qlock));
             pthread_cond_signal(&(pool->q_empty));
+            pthread_exit(NULL);
             break;
         }
         pthread_mutex_unlock(&(pool->qlock));

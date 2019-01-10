@@ -1,9 +1,17 @@
 #if !defined(THREADPOOL_H)
 #define THREADPOOL_H
 #include <pthread.h>
+#include <assert.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 /**
  * threadpool.h
@@ -15,6 +23,7 @@
 // maximum number of threads allowed in a pool
 #define MAXT_IN_POOL 200
 #define ERROR -1
+#define BUFF 4000
 
 typedef enum
 {
