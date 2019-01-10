@@ -98,19 +98,6 @@ void usage_message()
     printf("Usage: server <port> <pool-size> <max-number-of-request>\n");
 }
 
-int get_int(char *argv)
-{
-    if (strcmp(argv, "0") == 0) /* check for identical 0 */
-        return 0;
-    int port = atoi(argv);
-    if (port == 0)
-    {
-        usage_message();
-        return ERROR;
-    }
-    return port;
-}
-
 void internal_error(int socket)
 {
     time_t now;
@@ -178,6 +165,76 @@ void not_supported(int socket)
              timebuf, strlen(HTTP_501), HTTP_501);
     if (write_to_socket(socket, response) == ERROR)
         internal_error(socket);
+}
+
+void not_found(int socket)
+{
+    time_t now;
+    char timebuf[128];
+    memset(timebuf, 0, 128);
+    now = time(NULL);
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    char response[BUFF];
+    memset(response, 0, BUFF);
+    snprintf(response, sizeof(response),
+             "%s 404 Not Found\r\n"
+             "Server: %s\r\n"
+             "Date: %s\r\n"
+             "Content-Type: text/html; charset=utf-8\r\n"
+             "Content-Length: %ld\r\n"
+             "Connection: close\r\n\r\n"
+             "%s",
+             SERVER_HTTP, SERVER_PROTOCOL,
+             timebuf, strlen(HTTP_400), HTTP_400);
+    if (write_to_socket(socket, response) == ERROR)
+        internal_error(socket);
+}
+
+int get_int(char *argv)
+{
+    if (strcmp(argv, "0") == 0) /* check for identical 0 */
+        return 0;
+    int port = atoi(argv);
+    if (port == 0)
+    {
+        usage_message();
+        return ERROR;
+    }
+    return port;
+}
+
+char *get_mime_type(char *name)
+{
+    char *ext = strrchr(name, '.');
+    if (!ext)
+        return NULL;
+    if (strcmp(ext, ".html") == 0 || strcmp(ext, ".htm") == 0)
+        return "text/html";
+    if (strcmp(ext, ".jpg") == 0 || strcmp(ext, ".jpeg") == 0)
+        return "image/jpeg";
+    if (strcmp(ext, ".gif") == 0)
+        return "image/gif";
+    if (strcmp(ext, ".png") == 0)
+        return "image/png";
+    if (strcmp(ext, ".css") == 0)
+        return "text/css";
+    if (strcmp(ext, ".au") == 0)
+        return "audio/basic";
+    if (strcmp(ext, ".wav") == 0)
+        return "audio/wav";
+    if (strcmp(ext, ".avi") == 0)
+        return "video/x-msvideo";
+    if (strcmp(ext, ".mpeg") == 0 || strcmp(ext, ".mpg") == 0)
+        return "video/mpeg";
+    if (strcmp(ext, ".mp3") == 0)
+        return "audio/mpeg";
+    return NULL;
+}
+
+/* Checkong for requested path */
+int is_exist()
+{
+    return !ERROR;
 }
 
 /* Parsing the requast */
