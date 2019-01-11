@@ -128,7 +128,7 @@ void internal_error(int socket)
         internal_error(socket);
 }
 
-void forbidden(int socket)
+void server_response(int socket,const char *msg, const char* http)
 {
     time_t now;
     char timebuf[128];
@@ -138,107 +138,15 @@ void forbidden(int socket)
     char response[BUFF];
     memset(response, 0, BUFF);
     snprintf(response, sizeof(response),
-             "%s 403 Forbidden\r\n"
+             "%s %s\r\n"
              "Server: %s\r\n"
              "Date: %s\r\n"
              "Content-Type: text/html; charset=utf-8\r\n"
              "Content-Length: %ld\r\n"
              "Connection: close\r\n\r\n"
              "%s",
-             SERVER_HTTP, SERVER_PROTOCOL,
-             timebuf, strlen(HTTP_403), HTTP_403);
-    if (write_to_socket(socket, response) == ERROR)
-        internal_error(socket);
-}
-
-void found(int socket)
-{
-    time_t now;
-    char timebuf[128];
-    memset(timebuf, 0, 128);
-    now = time(NULL);
-    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    char response[BUFF];
-    memset(response, 0, BUFF);
-    snprintf(response, sizeof(response),
-             "%s 302 Found\r\n"
-             "Server: %s\r\n"
-             "Date: %s\r\n"
-             "Content-Type: text/html; charset=utf-8\r\n"
-             "Content-Length: %ld\r\n"
-             "Connection: close\r\n\r\n"
-             "%s",
-             SERVER_HTTP, SERVER_PROTOCOL,
-             timebuf, strlen(HTTP_302), HTTP_302);
-    if (write_to_socket(socket, response) == ERROR)
-        internal_error(socket);
-}
-
-void bad_req(int socket)
-{
-    time_t now;
-    char timebuf[128];
-    memset(timebuf, 0, 128);
-    now = time(NULL);
-    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    char response[BUFF];
-    memset(response, 0, BUFF);
-    snprintf(response, sizeof(response),
-             "%s 400 Bad Request\r\n"
-             "Server: %s\r\n"
-             "Date: %s\r\n"
-             "Content-Type: text/html; charset=utf-8\r\n"
-             "Content-Length: %ld\r\n"
-             "Connection: close\r\n\r\n"
-             "%s",
-             SERVER_HTTP, SERVER_PROTOCOL,
-             timebuf, strlen(HTTP_400), HTTP_400);
-    if (write_to_socket(socket, response) == ERROR)
-        internal_error(socket);
-}
-
-void not_supported(int socket)
-{
-    time_t now;
-    char timebuf[128];
-    memset(timebuf, 0, 128);
-    now = time(NULL);
-    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    char response[BUFF];
-    memset(response, 0, BUFF);
-    snprintf(response, sizeof(response),
-             "%s 501 Not supported\r\n"
-             "Server: %s\r\n"
-             "Date: %s\r\n"
-             "Content-Type: text/html; charset=utf-8\r\n"
-             "Content-Length: %ld\r\n"
-             "Connection: close\r\n\r\n"
-             "%s",
-             SERVER_HTTP, SERVER_PROTOCOL,
-             timebuf, strlen(HTTP_501), HTTP_501);
-    if (write_to_socket(socket, response) == ERROR)
-        internal_error(socket);
-}
-
-void not_found(int socket)
-{
-    time_t now;
-    char timebuf[128];
-    memset(timebuf, 0, 128);
-    now = time(NULL);
-    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    char response[BUFF];
-    memset(response, 0, BUFF);
-    snprintf(response, sizeof(response),
-             "%s 404 Not Found\r\n"
-             "Server: %s\r\n"
-             "Date: %s\r\n"
-             "Content-Type: text/html; charset=utf-8\r\n"
-             "Content-Length: %ld\r\n"
-             "Connection: close\r\n\r\n"
-             "%s",
-             SERVER_HTTP, SERVER_PROTOCOL,
-             timebuf, strlen(HTTP_404), HTTP_404);
+             SERVER_HTTP,msg, SERVER_PROTOCOL,
+             timebuf, strlen(http), http);
     if (write_to_socket(socket, response) == ERROR)
         internal_error(socket);
 }
@@ -315,6 +223,7 @@ bool is_exist(const char *path)
 
 int get_index(const char *path, int newfd)
 {
+    return SUCCESS;
 }
 
 /* Handle all the path proccess logic */
@@ -322,17 +231,17 @@ int path_proccesor(const char *path, int newfd)
 {
     if (is_exist(path) == false) /* Return error -> 404 not found */
     {
-        not_found(newfd);
+        server_response(newfd,"404 Not Found",HTTP_404);
         return SUCCESS;
     }
     if (is_directory(path) == true) /* If path is a directory */
     {
         if (path[strlen(path) - 1] != '/')
         {
-            found(newfd);
+            server_response(newfd,"302 Found",HTTP_302);
             return SUCCESS;
         }
-        if (get_index(path, newfd))
+        if (get_index(path, newfd) == SUCCESS)
         {
             /* Return index.html */
             return SUCCESS;
@@ -395,12 +304,12 @@ int process_request(void *arg)
     }
     if (parse == ERROR) /* Bad requast -> HTTP_400 */
     {
-        bad_req(newfd);
+        server_response(newfd,"400 Bad Request",HTTP_400);
         goto CLOSE;
     }
     if (strcmp(method, "POST") == 0) /* Only support the get method */
     {
-        not_supported(newfd);
+        server_response(newfd,"501 Not supported",HTTP_501);
         goto CLOSE;
     }
     path_proccesor(path, newfd);
