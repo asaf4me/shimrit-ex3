@@ -219,16 +219,27 @@ bool is_exist(const char *path)
     return true;
 }
 
-int get_index(const char *path, int newfd)
+int get_dir_content(const char *path, int newfd)
 {
-
+    DIR *directory = opendir(path);
+    if(directory == NULL)
+    {
+        perror("opendir");
+        internal_error(newfd);
+        return ERROR;
+    }
+    struct dirent *dp;
+    while((dp = readdir(directory)) != NULL)
+    {
+        
+    }
     return SUCCESS;
 }
 
 /* Handle all the path proccess logic */
-int path_proccesor(const char *path, int newfd)
+int path_proccesor(char *path, int newfd)
 {
-    if (is_exist(path) == false) /* Return error -> 404 not found */
+    if (is_exist(++path) == false && strcmp(path,"/") != 0) /* Return error -> 404 not found */
     {
         server_response(newfd,"404 Not Found",HTTP_404);
         return SUCCESS;
@@ -240,12 +251,12 @@ int path_proccesor(const char *path, int newfd)
             server_response(newfd,"302 Found",HTTP_302);
             return SUCCESS;
         }
-        if (get_index(path, newfd) == SUCCESS)
+        if (get_dir_content(path, newfd) != SUCCESS)
         {
-            /* Return index.html */
-            return SUCCESS;
-        }
-        /* Return contents of directory */
+            /* Return contents of directory */
+            internal_error(newfd);
+            return ERROR;
+        }  
     }
     if (is_file(path) == true) /* If path is a file */
     {
@@ -272,7 +283,7 @@ int parsing(char req[], char *method[], char *path[], char *version[])
         temp = strtok(NULL, " ");
     }
     parsed[position] = NULL;
-    *method = parsed[0], *path = ++parsed[1], *version = parsed[2];
+    *method = parsed[0], *path = parsed[1], *version = parsed[2];
     if (*method == NULL || *path == NULL || *version == NULL)
     {
         free(parsed);
@@ -327,7 +338,6 @@ int main(int argc, char *argv[])
         usage_message();
         return EXIT_FAILURE;
     }
-
     struct sockaddr_in server, client;               /* used by bind() , used by accept() */
     int fd, port, poolSize, maxClients, counter = 0; /* socket descriptor , new socket descriptor , port handle ,  pool-size handle , max-clients handle */
     unsigned int cli_len = sizeof(client);
