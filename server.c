@@ -124,8 +124,6 @@ void internal_error(int socket)
              "%s",
              SERVER_HTTP, SERVER_PROTOCOL,
              timebuf, strlen(HTTP_500), HTTP_500);
-    if (write_to_socket(socket, response) == ERROR)
-        internal_error(socket);
 }
 
 void server_response(int socket,const char *msg, const char* http)
@@ -223,6 +221,7 @@ bool is_exist(const char *path)
 
 int get_index(const char *path, int newfd)
 {
+
     return SUCCESS;
 }
 
