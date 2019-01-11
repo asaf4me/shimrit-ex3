@@ -9,12 +9,19 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 #include "threadpool.h"
 
 /* DEFINES */
 
+// typedef enum {false,true} bool;
+
 #define ERROR -1
+#define SUCCESS 0
+#define FILE 1
+#define DIRECTORY 2
 #define ALLOC_ERROR -2
 #define BUFF 4000
 #define SERVER_PROTOCOL "webserver/1.1"
@@ -121,6 +128,52 @@ void internal_error(int socket)
         internal_error(socket);
 }
 
+void forbidden(int socket)
+{
+    time_t now;
+    char timebuf[128];
+    memset(timebuf, 0, 128);
+    now = time(NULL);
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    char response[BUFF];
+    memset(response, 0, BUFF);
+    snprintf(response, sizeof(response),
+             "%s 403 Forbidden\r\n"
+             "Server: %s\r\n"
+             "Date: %s\r\n"
+             "Content-Type: text/html; charset=utf-8\r\n"
+             "Content-Length: %ld\r\n"
+             "Connection: close\r\n\r\n"
+             "%s",
+             SERVER_HTTP, SERVER_PROTOCOL,
+             timebuf, strlen(HTTP_403), HTTP_403);
+    if (write_to_socket(socket, response) == ERROR)
+        internal_error(socket);
+}
+
+void found(int socket)
+{
+    time_t now;
+    char timebuf[128];
+    memset(timebuf, 0, 128);
+    now = time(NULL);
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    char response[BUFF];
+    memset(response, 0, BUFF);
+    snprintf(response, sizeof(response),
+             "%s 302 Found\r\n"
+             "Server: %s\r\n"
+             "Date: %s\r\n"
+             "Content-Type: text/html; charset=utf-8\r\n"
+             "Content-Length: %ld\r\n"
+             "Connection: close\r\n\r\n"
+             "%s",
+             SERVER_HTTP, SERVER_PROTOCOL,
+             timebuf, strlen(HTTP_302), HTTP_302);
+    if (write_to_socket(socket, response) == ERROR)
+        internal_error(socket);
+}
+
 void bad_req(int socket)
 {
     time_t now;
@@ -185,7 +238,7 @@ void not_found(int socket)
              "Connection: close\r\n\r\n"
              "%s",
              SERVER_HTTP, SERVER_PROTOCOL,
-             timebuf, strlen(HTTP_400), HTTP_400);
+             timebuf, strlen(HTTP_404), HTTP_404);
     if (write_to_socket(socket, response) == ERROR)
         internal_error(socket);
 }
@@ -231,9 +284,65 @@ char *get_mime_type(char *name)
     return NULL;
 }
 
-/* Checking for requested path */
-int is_exist()
+/* Checking for Directory */
+bool is_directory(const char *path)
 {
+    struct stat stats;
+    stat(path, &stats);
+    if (S_ISDIR(stats.st_mode))
+        return true;
+    return false;
+}
+
+/* Checking for file */
+bool is_file(const char *path)
+{
+    struct stat stats;
+    stat(path, &stats);
+    if (S_ISREG(stats.st_mode))
+        return true;
+    return false;
+}
+
+/* Checking for path existent */
+bool is_exist(const char *path)
+{
+    struct stat st;
+    if (stat(path, &st) == -1)
+        return false;
+    return true;
+}
+
+int get_index(const char *path, int newfd)
+{
+}
+
+/* Handle all the path proccess logic */
+int path_proccesor(const char *path, int newfd)
+{
+    if (is_exist(path) == false) /* Return error -> 404 not found */
+    {
+        not_found(newfd);
+        return SUCCESS;
+    }
+    if (is_directory(path) == true) /* If path is a directory */
+    {
+        if (path[strlen(path) - 1] != '/')
+        {
+            found(newfd);
+            return SUCCESS;
+        }
+        if (get_index(path, newfd))
+        {
+            /* Return index.html */
+            return SUCCESS;
+        }
+        /* Return contents of directory */
+    }
+    if (is_file(path) == true) /* If path is a file */
+    {
+    }
+
     return !ERROR;
 }
 
@@ -255,7 +364,7 @@ int parsing(char req[], char *method[], char *path[], char *version[])
         temp = strtok(NULL, " ");
     }
     parsed[position] = NULL;
-    *method = parsed[0], *path = parsed[1], *version = parsed[2];
+    *method = parsed[0], *path = ++parsed[1], *version = parsed[2];
     if (*method == NULL || *path == NULL || *version == NULL)
     {
         free(parsed);
@@ -284,17 +393,18 @@ int process_request(void *arg)
         internal_error(newfd);
         goto CLOSE;
     }
-    if (parse == ERROR)
+    if (parse == ERROR) /* Bad requast -> HTTP_400 */
     {
         bad_req(newfd);
         goto CLOSE;
     }
-    if (strcmp(method, "POST") == 0)
+    if (strcmp(method, "POST") == 0) /* Only support the get method */
     {
         not_supported(newfd);
         goto CLOSE;
     }
-
+    path_proccesor(path, newfd);
+    goto CLOSE;
 CLOSE:
     free(arg);
     close(newfd);
