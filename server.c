@@ -124,6 +124,7 @@ int write_to_socket(int sock, char *msg, size_t length)
     return sum;
 }
 
+/* Usage message */
 void usage_message()
 {
     printf("Usage: server <port> <pool-size> <max-number-of-request>\n");
@@ -346,7 +347,7 @@ bool has_permission(char *file)
 /* Getting all the files within a directory */
 char *get_dir_content(char *path, char *file)
 {
-    
+
     return NULL;
 }
 
