@@ -24,6 +24,7 @@ typedef enum
 
 #define ERROR -1
 #define PATH_MAX 4096
+#define ENTITY_PAGE 500
 #define SUCCESS 0
 #define FILE 1
 #define DIRECTORY 2
@@ -179,13 +180,13 @@ int get_int(char *argv)
 {
     if (strcmp(argv, "0") == 0) /* check for identical 0 */
         return 0;
-    int port = atoi(argv);
-    if (port == 0)
+    int num = atoi(argv);
+    if (num == 0)
     {
         usage_message();
         return ERROR;
     }
-    return port;
+    return num;
 }
 
 /* Get the mime type of a file */
@@ -268,7 +269,7 @@ off_t get_size(int file)
 int send_file_via_socket(int newfd, char *file)
 {
     int filefd, bytes;
-    if(file[0] == '/')
+    if (file[0] == '/')
         ++file;
     if ((filefd = open(file, O_RDONLY)) == ERROR)
     {
@@ -369,6 +370,20 @@ char *get_index(char *path, char *file)
     return NULL;
 }
 
+bool has_permission(char *file)
+{
+    if (file[0] == '/')
+        ++file;
+    int fileFd;
+    if ((fileFd = open(file, O_RDONLY)) >= 0)
+    {
+        close(fileFd);
+        return true;
+    }
+    close(fileFd);
+    return false;
+}
+
 /* Handle all the path proccess logic */
 int path_proccesor(char *path, int newfd)
 {
@@ -392,13 +407,24 @@ int path_proccesor(char *path, int newfd)
             return SUCCESS;
         }
         /* Return the content dir */
-
     }
     if (is_file(path) == true) /* If path is a file */
     {
-        
+        if (has_permission(path) == false)
+        {
+            server_response(newfd, "403 Forbidden", HTTP_403);
+            return SUCCESS;
+        }
+        if (send_file_via_socket(newfd, path) == ERROR)
+            internal_error(newfd);
+        return SUCCESS;
     }
-    return !ERROR;
+    if (is_file(path) == false || has_permission(path) == false) /* If path is not a regular file or file has no read permission */
+    {
+        server_response(newfd, "403 Forbidden", HTTP_403);
+        return SUCCESS;
+    }
+    return SUCCESS;
 }
 
 /* Parsing the requast */
