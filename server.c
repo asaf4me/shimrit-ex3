@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <signal.h>
 #include "threadpool.h"
 
 /* DEFINES */
@@ -104,11 +105,10 @@ typedef enum
 /* END DEFINES */
 
 /* Wrinting to the socket */
-int write_to_socket(int sock, char *msg)
+int write_to_socket(int sock, char *msg, size_t length)
 {
     int bytes = 0, sum = 0;
     const char *pointer = msg;
-    size_t length = strlen(msg);
     while (true)
     {
         bytes = write(sock, pointer, length);
@@ -139,7 +139,7 @@ void internal_error(int socket)
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
     char response[BUFF];
     memset(response, 0, BUFF);
-    snprintf(response, sizeof(response),
+    int length = snprintf(response, sizeof(response),
              "%s 500 Internal Server Error\r\n"
              "Server: %s\r\n"
              "Date: %s\r\n"
@@ -149,6 +149,7 @@ void internal_error(int socket)
              "%s",
              SERVER_HTTP, SERVER_PROTOCOL,
              timebuf, strlen(HTTP_500), HTTP_500);
+    write_to_socket(socket, response, length);
 }
 
 /* Handle all the other HTTP response */
@@ -161,7 +162,7 @@ void server_response(int socket, const char *msg, const char *http)
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
     char response[BUFF];
     memset(response, 0, BUFF);
-    snprintf(response, sizeof(response),
+    int length = snprintf(response, sizeof(response),
              "%s %s\r\n"
              "Server: %s\r\n"
              "Date: %s\r\n"
@@ -171,7 +172,7 @@ void server_response(int socket, const char *msg, const char *http)
              "%s",
              SERVER_HTTP, msg, SERVER_PROTOCOL,
              timebuf, strlen(http), http);
-    if (write_to_socket(socket, response) == ERROR)
+    if (write_to_socket(socket, response, length) == ERROR)
         internal_error(socket);
 }
 
@@ -295,7 +296,7 @@ int send_file_via_socket(int newfd, char *file)
     memset(timebuf, 0, 128);
     now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    snprintf(response, sizeof(response),
+    int textLength = snprintf(response, sizeof(response),
              "%s 200 \r\n"
              "Server: %s\r\n"
              "Date: %s\r\n"
@@ -304,7 +305,7 @@ int send_file_via_socket(int newfd, char *file)
              "Connection: close\r\n\r\n",
              SERVER_HTTP, SERVER_PROTOCOL,
              timebuf, mime, length);
-    if (write_to_socket(newfd, response) == ERROR)
+    if (write_to_socket(newfd, response, textLength) == ERROR)
         internal_error(newfd);
     char *indexHtml = malloc(length * sizeof(char) + 1);
     if (indexHtml == NULL)
@@ -315,7 +316,7 @@ int send_file_via_socket(int newfd, char *file)
     indexHtml[length] = '\0';
     while ((bytes = read(filefd, indexHtml, length)) > 0)
     {
-        if (write_to_socket(newfd, indexHtml) == ERROR)
+        if (write_to_socket(newfd, indexHtml, length) == ERROR)
         {
             perror("write");
             free(indexHtml);
@@ -328,10 +329,24 @@ int send_file_via_socket(int newfd, char *file)
     return SUCCESS;
 }
 
+bool has_permission(char *file)
+{
+    if (file[0] == '/')
+        ++file;
+    int fileFd;
+    if ((fileFd = open(file, O_RDONLY)) >= 0)
+    {
+        close(fileFd);
+        return true;
+    }
+    close(fileFd);
+    return false;
+}
+
 /* Getting all the files within a directory */
 char *get_dir_content(char *path, char *file)
 {
-
+    
     return NULL;
 }
 
@@ -370,20 +385,6 @@ char *get_index(char *path, char *file)
     return NULL;
 }
 
-bool has_permission(char *file)
-{
-    if (file[0] == '/')
-        ++file;
-    int fileFd;
-    if ((fileFd = open(file, O_RDONLY)) >= 0)
-    {
-        close(fileFd);
-        return true;
-    }
-    close(fileFd);
-    return false;
-}
-
 /* Handle all the path proccess logic */
 int path_proccesor(char *path, int newfd)
 {
@@ -407,6 +408,7 @@ int path_proccesor(char *path, int newfd)
             return SUCCESS;
         }
         /* Return the content dir */
+
     }
     if (is_file(path) == true) /* If path is a file */
     {
@@ -502,8 +504,9 @@ int main(int argc, char *argv[])
         usage_message();
         return EXIT_FAILURE;
     }
-    struct sockaddr_in server, client;               /* used by bind() , used by accept() */
-    int fd, port, poolSize, maxClients, counter = 0; /* socket descriptor , new socket descriptor , port handle ,  pool-size handle , max-clients handle */
+    signal(SIGPIPE, SIG_IGN); /* Prevent SIG_PIPE */
+    struct sockaddr_in server, client;               /* Used by bind() , Used by accept() */
+    int fd, port, poolSize, maxClients, counter = 0; /* Socket descriptor , New socket descriptor , Port handle ,  Pool-size handle , Max-clients handle */
     unsigned int cli_len = sizeof(client);
     server.sin_family = AF_INET;
 
@@ -562,7 +565,7 @@ int main(int argc, char *argv[])
         counter++;
     }
 
-    /* destructors */
+    /* Destructors */
     destroy_threadpool(threadpool);
     shutdown(fd, SHUT_RDWR);
     close(fd);
