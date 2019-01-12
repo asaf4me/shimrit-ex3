@@ -128,6 +128,7 @@ void usage_message()
     printf("Usage: server <port> <pool-size> <max-number-of-request>\n");
 }
 
+/* Sending ERROR 500 */
 void internal_error(int socket)
 {
     time_t now;
@@ -149,6 +150,7 @@ void internal_error(int socket)
              timebuf, strlen(HTTP_500), HTTP_500);
 }
 
+/* Handle all the other HTTP response */
 void server_response(int socket, const char *msg, const char *http)
 {
     time_t now;
@@ -172,6 +174,7 @@ void server_response(int socket, const char *msg, const char *http)
         internal_error(socket);
 }
 
+/* Convert string to int */
 int get_int(char *argv)
 {
     if (strcmp(argv, "0") == 0) /* check for identical 0 */
@@ -185,6 +188,7 @@ int get_int(char *argv)
     return port;
 }
 
+/* Get the mime type of a file */
 char *get_mime_type(char *name)
 {
     char *ext = strrchr(name, '.');
@@ -242,6 +246,7 @@ bool is_exist(const char *path)
     return true;
 }
 
+/* Get the size of the file using lseek */
 off_t get_size(int file)
 {
     off_t currentPos = lseek(file, (size_t)0, SEEK_CUR);
@@ -259,6 +264,7 @@ off_t get_size(int file)
     return length;
 }
 
+/* Transfer file via socket */
 int send_file_via_socket(int newfd, char *file)
 {
     int filefd, bytes;
@@ -321,11 +327,14 @@ int send_file_via_socket(int newfd, char *file)
     return SUCCESS;
 }
 
+/* Getting all the files within a directory */
 char *get_dir_content(char *path, char *file)
 {
+
     return NULL;
 }
 
+/* Searching for the index.html within a directory */
 char *get_index(char *path, char *file)
 {
     DIR *directory;
@@ -383,9 +392,11 @@ int path_proccesor(char *path, int newfd)
             return SUCCESS;
         }
         /* Return the content dir */
+
     }
     if (is_file(path) == true) /* If path is a file */
     {
+        
     }
     return !ERROR;
 }
