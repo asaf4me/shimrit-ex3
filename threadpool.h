@@ -22,14 +22,6 @@
 
 // maximum number of threads allowed in a pool
 #define MAXT_IN_POOL 200
-#define ERROR -1
-#define BUFF 4000
-
-typedef enum
-{
-	false,
-	true
-} bool;
 
 /**
  * the pool holds a queue of this structure

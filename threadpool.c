@@ -12,6 +12,10 @@
 #include <unistd.h>
 #include "threadpool.h"
 
+typedef enum {false,true} bool;
+#define ERROR -1
+#define BUFF 4000
+
 threadpool *create_threadpool(int num_threads_in_pool)
 {
     if (num_threads_in_pool < 0 || num_threads_in_pool > MAXT_IN_POOL)

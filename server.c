@@ -16,9 +16,14 @@
 
 /* DEFINES */
 
-// typedef enum {false,true} bool;
+typedef enum
+{
+    false,
+    true
+} bool;
 
 #define ERROR -1
+#define PATH_MAX 4096
 #define SUCCESS 0
 #define FILE 1
 #define DIRECTORY 2
@@ -77,6 +82,24 @@
     "</BODY>"                                   \
     "</HTML>"
 
+#define DIRERCTOY_CONTENTS                             \
+    "<HTML>"                                           \
+    "<HEAD><TITLE>Index of %s</TITLE></HEAD>"          \
+    "<BODY>"                                           \
+    "<H4>Index of %s</H4>"                             \
+    "<table CELLSPACING=8>"                            \
+    "<tr>"                                             \
+    "<th>Name</th><th>Last Modified</th><th>Size</th>" \
+    "</tr>"                                            \
+    "%s"                                               \
+    "</table><HR>"                                     \
+    "<ADDRESS>%s</ADDRESS>"                            \
+    "</BODY>"                                          \
+    "</HTML>"
+
+#define DIR_CONTENTS_TEMPLATE \
+    "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>"
+
 /* END DEFINES */
 
 /* Wrinting to the socket */
@@ -126,7 +149,7 @@ void internal_error(int socket)
              timebuf, strlen(HTTP_500), HTTP_500);
 }
 
-void server_response(int socket,const char *msg, const char* http)
+void server_response(int socket, const char *msg, const char *http)
 {
     time_t now;
     char timebuf[128];
@@ -143,7 +166,7 @@ void server_response(int socket,const char *msg, const char* http)
              "Content-Length: %ld\r\n"
              "Connection: close\r\n\r\n"
              "%s",
-             SERVER_HTTP,msg, SERVER_PROTOCOL,
+             SERVER_HTTP, msg, SERVER_PROTOCOL,
              timebuf, strlen(http), http);
     if (write_to_socket(socket, response) == ERROR)
         internal_error(socket);
@@ -219,49 +242,151 @@ bool is_exist(const char *path)
     return true;
 }
 
-int get_dir_content(const char *path, int newfd)
+off_t get_size(int file)
 {
-    DIR *directory = opendir(path);
-    if(directory == NULL)
+    off_t currentPos = lseek(file, (size_t)0, SEEK_CUR);
+    off_t length = lseek(file, (size_t)0, SEEK_END);
+    if (currentPos == (off_t)-1 || length == (off_t)-1)
     {
-        perror("opendir");
-        internal_error(newfd);
+        close(file);
+        return (off_t)ERROR;
+    }
+    if (lseek(file, currentPos, SEEK_SET) == -1)
+    {
+        close(file);
+        return (off_t)ERROR;
+    }
+    return length;
+}
+
+int send_file_via_socket(int newfd, char *file)
+{
+    int filefd, bytes;
+    if(file[0] == '/')
+        ++file;
+    if ((filefd = open(file, O_RDONLY)) == ERROR)
+    {
+        perror("open");
         return ERROR;
     }
-    struct dirent *dp;
-    while((dp = readdir(directory)) != NULL)
+    off_t length = get_size(filefd);
+    if (length == ERROR)
     {
-        
+        close(filefd);
+        return ERROR;
     }
+    char *mime = get_mime_type(file);
+    if (mime == NULL)
+    {
+        fprintf(stderr, "unknown mime: %s.\n", file);
+        return ERROR;
+    }
+    char response[BUFF];
+    memset(response, 0, BUFF);
+    time_t now;
+    char timebuf[128];
+    memset(timebuf, 0, 128);
+    now = time(NULL);
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    snprintf(response, sizeof(response),
+             "%s 200 \r\n"
+             "Server: %s\r\n"
+             "Date: %s\r\n"
+             "Content-Type: %s\r\n"
+             "Content-Length: %ld\r\n"
+             "Connection: close\r\n\r\n",
+             SERVER_HTTP, SERVER_PROTOCOL,
+             timebuf, mime, length);
+    if (write_to_socket(newfd, response) == ERROR)
+        internal_error(newfd);
+    char *indexHtml = malloc(length * sizeof(char) + 1);
+    if (indexHtml == NULL)
+    {
+        close(filefd);
+        return ERROR;
+    }
+    indexHtml[length] = '\0';
+    while ((bytes = read(filefd, indexHtml, length)) > 0)
+    {
+        if (write_to_socket(newfd, indexHtml) == ERROR)
+        {
+            perror("write");
+            free(indexHtml);
+            close(filefd);
+            return ERROR;
+        }
+    }
+    free(indexHtml);
+    close(filefd);
     return SUCCESS;
+}
+
+char *get_dir_content(char *path, char *file)
+{
+    return NULL;
+}
+
+char *get_index(char *path, char *file)
+{
+    DIR *directory;
+    if (strcmp(path, "/") == 0)
+    {
+        if ((directory = opendir("./")) == NULL)
+        {
+            perror("opendir");
+            return NULL;
+        }
+    }
+    else
+    {
+        if ((directory = opendir(path)) == NULL)
+        {
+            perror("opendir");
+            return NULL;
+        }
+    }
+    struct dirent *entry;
+    while ((entry = readdir(directory)) != NULL)
+    {
+        if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0)
+            continue;
+        if (strcmp(entry->d_name, file) == 0)
+        {
+            closedir(directory);
+            return strncat(path, file, PATH_MAX + strlen(file));
+        }
+    }
+    closedir(directory);
+    return NULL;
 }
 
 /* Handle all the path proccess logic */
 int path_proccesor(char *path, int newfd)
 {
-    if (is_exist(++path) == false && strcmp(path,"/") != 0) /* Return error -> 404 not found */
+    char *index = NULL;
+    if (is_exist(++path) == false && strcmp(--path, "/") != 0) /* Return error -> 404 not found */
     {
-        server_response(newfd,"404 Not Found",HTTP_404);
+        server_response(newfd, "404 Not Found", HTTP_404);
         return SUCCESS;
     }
     if (is_directory(path) == true) /* If path is a directory */
     {
         if (path[strlen(path) - 1] != '/')
         {
-            server_response(newfd,"302 Found",HTTP_302);
+            server_response(newfd, "302 Found", HTTP_302);
             return SUCCESS;
         }
-        if (get_dir_content(path, newfd) != SUCCESS)
+        if ((index = get_index(path, "index.html")) != NULL) /* Return index.html within the folder */
         {
-            /* Return contents of directory */
-            internal_error(newfd);
-            return ERROR;
-        }  
+            if (send_file_via_socket(newfd, index) == ERROR)
+                internal_error(newfd);
+            return SUCCESS;
+        }
+        /* Return the content dir */
     }
     if (is_file(path) == true) /* If path is a file */
     {
     }
-
     return !ERROR;
 }
 
@@ -284,6 +409,8 @@ int parsing(char req[], char *method[], char *path[], char *version[])
     }
     parsed[position] = NULL;
     *method = parsed[0], *path = parsed[1], *version = parsed[2];
+    if (strlen(*path) == 0)
+        *path = "/";
     if (*method == NULL || *path == NULL || *version == NULL)
     {
         free(parsed);
@@ -314,12 +441,12 @@ int process_request(void *arg)
     }
     if (parse == ERROR) /* Bad requast -> HTTP_400 */
     {
-        server_response(newfd,"400 Bad Request",HTTP_400);
+        server_response(newfd, "400 Bad Request", HTTP_400);
         goto CLOSE;
     }
     if (strcmp(method, "POST") == 0) /* Only support the get method */
     {
-        server_response(newfd,"501 Not supported",HTTP_501);
+        server_response(newfd, "501 Not supported", HTTP_501);
         goto CLOSE;
     }
     path_proccesor(path, newfd);
