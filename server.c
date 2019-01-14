@@ -264,7 +264,7 @@ bool has_permission(char *file)
 /* Get the file list of directory */
 char *get_dir_content(const char *path, struct stat st)
 {
-    int size = BUFF + strlen(path);
+    int size = BUFF + strlen(path), len = 0;
     char *html = malloc(size + 1);
     char entity[ENTITY_LINE];
     if (html == NULL)
@@ -272,14 +272,14 @@ char *get_dir_content(const char *path, struct stat st)
     memset(entity, 0, ENTITY_LINE);
     memset(html, 0, size);
     html[size] = '\0';
-    int length = snprintf(html, BUFF, "<HTML>"
-                                      "<HEAD><TITLE>Index of %s</TITLE></HEAD>"
-                                      "<BODY>"
-                                      "<H4>Index of %s</H4>"
-                                      "<table CELLSPACING=8>"
-                                      "<tr>"
-                                      "<th>Name</th><th>Last Modified</th><th>Size</th>",
-                          path, path);
+    snprintf(html, BUFF, "<HTML>"
+                         "<HEAD><TITLE>Index of %s</TITLE></HEAD>"
+                         "<BODY>"
+                         "<H4>Index of %s</H4>"
+                         "<table CELLSPACING=8>"
+                         "<tr>"
+                         "<th>Name</th><th>Last Modified</th><th>Size</th>",
+             path, path);
     DIR *directory = NULL;
     if (strcmp(path, "/") == 0)
     {
@@ -313,10 +313,12 @@ char *get_dir_content(const char *path, struct stat st)
             return NULL;
         }
         if (S_ISDIR(sd.st_mode)) /* Identify for a directory */
-            length = snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), "");
-        else if (S_ISREG(sd.st_mode))
-            length = snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%ld</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), sd.st_size);
+            len = snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), "");
+        else if (S_ISREG(sd.st_mode)) /* Identify for a regular file */
+            len = snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%ld</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), sd.st_size);
         strncat(html, entity, ENTITY_LINE);
+        if (len > ENTITY_LINE)
+            fprintf(stderr, "assumption of 500 entity line");
     }
     strncat(html, "</table><HR><ADDRESS>webserver/1.1</ADDRESS></BODY></HTML>", ENTITY_LINE);
     closedir(directory);
