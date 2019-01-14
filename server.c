@@ -24,6 +24,7 @@ typedef enum
 } bool;
 
 #define ERROR -1
+#define TIME_BUFF 128
 #define PATH_MAX 4096
 #define ENTITY_LINE 500
 #define SUCCESS 0
@@ -44,14 +45,14 @@ typedef enum
     "</BODY>"                        \
     "</HTML>"
 
-#define HTTP_BODY                                \
-    "%s %s\r\n"                                  \
-    "Server: %s\r\n"                             \
-    "Date: %s\r\n"                               \
-    "%s /%s\\\r\n"                               \
-    "Content-Type: text/html; charset=utf-8\r\n" \
-    "Content-Length: %ld\r\n"                    \
-    "Connection: close\r\n\r\n"                  \
+#define HTTP_BODY                         \
+    "%s %s\r\n"                           \
+    "Server: %s\r\n"                      \
+    "Date: %s\r\n"                        \
+    "%s /%s\\\r\n"                        \
+    "Content-Type: %s; charset=utf-8\r\n" \
+    "Content-Length: %ld\r\n"             \
+    "Connection: close\r\n\r\n"           \
     "%s"
 
 #define DIR_CONTENTS_TEMPLATE \ "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>"
@@ -86,8 +87,8 @@ void usage_message()
 /* Handle all the other HTTP response */
 void server_response(int socket, const char *title, const char *body, const char *path)
 {
-    char http[BUFF], timebuf[128], response[BUFF + PATH_MAX];
-    memset(timebuf, 0, 128);
+    char http[BUFF], timebuf[TIME_BUFF], response[BUFF + PATH_MAX];
+    memset(timebuf, 0, TIME_BUFF);
     memset(response, 0, BUFF + PATH_MAX);
     memset(http, 0, BUFF);
     snprintf(http, sizeof(http), HTTP_HEADER, title, title, body);
@@ -95,10 +96,10 @@ void server_response(int socket, const char *title, const char *body, const char
     int length = 0;
     now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    if(strlen(path) > 0)
-        length = snprintf(response, sizeof(response),HTTP_BODY, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: ", path, strlen(http), http);
+    if (strlen(path) > 0)
+        length = snprintf(response, sizeof(response), HTTP_BODY, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: ", path, "text/html", strlen(http), http);
     else
-        length = snprintf(response, sizeof(response),HTTP_BODY, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "", "", strlen(http), http);
+        length = snprintf(response, sizeof(response), HTTP_BODY, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "", "", "text/html", strlen(http), http);
     write_to_socket(socket, response, length);
 }
 
@@ -218,19 +219,11 @@ int send_file_via_socket(int newfd, char *file)
     char response[BUFF];
     memset(response, 0, BUFF);
     time_t now;
-    char timebuf[128];
-    memset(timebuf, 0, 128);
+    char timebuf[TIME_BUFF];
+    memset(timebuf, 0, TIME_BUFF);
     now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    int textLength = snprintf(response, sizeof(response),
-                              "%s 200 \r\n"
-                              "Server: %s\r\n"
-                              "Date: %s\r\n"
-                              "Content-Type: %s\r\n"
-                              "Content-Length: %ld\r\n"
-                              "Connection: close\r\n\r\n",
-                              SERVER_HTTP, SERVER_PROTOCOL,
-                              timebuf, mime, length);
+    int textLength = snprintf(response, sizeof(response), HTTP_BODY, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", mime, length,"");
     if (write_to_socket(newfd, response, textLength) == ERROR)
         server_response(newfd, "500 Internal Server Error", "Some server side error", "");
     char *indexHtml = malloc(length * sizeof(char) + 1);
@@ -272,6 +265,7 @@ bool has_permission(char *file)
 /* Getting all the files within a directory */
 char *get_dir_content(const char *path, int newfd)
 {
+
     return NULL;
 }
 
