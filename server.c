@@ -52,6 +52,7 @@ typedef enum
     "%s /%s\\\r\n"                        \
     "Content-Type: %s; charset=utf-8\r\n" \
     "Content-Length: %ld\r\n"             \
+    "%s %s\r\n"                           \
     "Connection: close\r\n\r\n"           \
     "%s"
 
@@ -97,9 +98,9 @@ void server_response(int socket, const char *title, const char *body, char *path
     now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
     if (strlen(path) > 0)
-        length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: ", path, "text/html", strlen(http), http);
+        length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: ", path, "text/html", strlen(http), "", "", http);
     else
-        length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "", "", "text/html", strlen(http), http);
+        length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "", "", "text/html", strlen(http), "", "", http);
     write_to_socket(socket, response, length);
 }
 
@@ -216,14 +217,12 @@ int send_file_via_socket(int newfd, char *file)
         fprintf(stderr, "unknown mime: %s.\n", file);
         return ERROR;
     }
-    char response[BUFF];
+    char response[BUFF], timebuf[TIME_BUFF];
     memset(response, 0, BUFF);
-    time_t now;
-    char timebuf[TIME_BUFF];
     memset(timebuf, 0, TIME_BUFF);
-    now = time(NULL);
+    time_t now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    int textLength = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", mime, length, "");
+    int textLength = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", mime, length, "", "", "");
     if (write_to_socket(newfd, response, textLength) == ERROR)
         server_response(newfd, "500 Internal Server Error", "Some server side error", "");
     char *indexHtml = malloc(length * sizeof(char) + 1);
@@ -284,17 +283,7 @@ int dir_content(const char *path, int newfd)
     contents = get_dir_content(path);
     if (contents == NULL)
         return ERROR;
-    int length = snprintf(response, sizeof(response) + strlen(contents),
-                          "%s 200 OK\r\n"
-                          "Server: %s\r\n"
-                          "Date: %s\r\n"
-                          "Content-Type: text/html; charset=utf-8\r\n"
-                          "Content-Length: %ld\r\n"
-                          "Last-Modified: %ld\r\n"
-                          "Connection: close\r\n\r\n"
-                          "%s",
-                          SERVER_HTTP, SERVER_PROTOCOL,
-                          timebuf, strlen(contents), st.st_mtime, contents);
+    int length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", "text/html", strlen(contents), "Last-Modified: ", ctime(&st.st_mtime), "");
     if (write_to_socket(newfd, response, length) == ERROR)
         return ERROR;
     return !ERROR;
@@ -342,40 +331,33 @@ int path_proccesor(char *path, int newfd)
     if (is_exist(++path) == false && strcmp(--path, "/") != 0) /* Return error -> 404 not found */
     {
         server_response(newfd, "404 Not Found", "File not found", "");
-        return SUCCESS;
     }
-    if (is_directory(path) == true) /* If path is a directory */
+    else if (is_directory(path) == true) /* If path is a directory */
     {
         if (path[strlen(path) - 1] != '/')
         {
             server_response(newfd, "302 Found", "Directories must end with a slash", path);
-            return SUCCESS;
         }
-        if ((index = get_index(path, "index.html")) != NULL) /* Return index.html within the folder */
+        else if ((index = get_index(path, "index.html")) != NULL) /* Return index.html within the folder */
         {
             if (send_file_via_socket(newfd, index) == ERROR)
                 server_response(newfd, "500 Internal Server Error", "Some server side error", "");
-            return SUCCESS;
         }
-        if (dir_content(path, newfd) == ERROR) /* Return the content dir */
+        else if (dir_content(path, newfd) == ERROR) /* Return the content dir */
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
-        return SUCCESS;
     }
-    if (is_file(path) == true) /* If path is a file */
+    else if (is_file(path) == true) /* If path is a file */
     {
         if (has_permission(path) == false)
         {
             server_response(newfd, "403 Forbidden", "Access denied", "");
-            return SUCCESS;
         }
-        if (send_file_via_socket(newfd, path) == ERROR)
+        else if (send_file_via_socket(newfd, path) == ERROR)
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
-        return SUCCESS;
     }
-    if (is_file(path) == false || has_permission(path) == false) /* If path is not a regular file or file has no read permission */
+    else if (is_file(path) == false || has_permission(path) == false) /* If path is not a regular file or file has no read permission */
     {
         server_response(newfd, "403 Forbidden", "Access denied", "");
-        return SUCCESS;
     }
     return SUCCESS;
 }
