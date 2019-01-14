@@ -31,6 +31,7 @@ typedef enum
 #define DIRECTORY 2
 #define ALLOC_ERROR -2
 #define BUFF 4000
+#define LOCATION_BUFF 20
 #define SERVER_PROTOCOL "webserver/1.1"
 #define SERVER_HTTP "HTTP/1.1"
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
@@ -81,19 +82,36 @@ void server_response(int socket, const char *title, const char *body, const char
              title,
              title, body);
     time_t now;
+    int length = 0;
     now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    int length = snprintf(response, sizeof(response),
+    if (strlen(path) > 0)
+    {
+        length = snprintf(response, sizeof(response),
                           "%s %s\r\n"
                           "Server: %s\r\n"
                           "Date: %s\r\n"
-                          "%s"
+                          "Location: /%s\\\r\n"
                           "Content-Type: text/html; charset=utf-8\r\n"
                           "Content-Length: %ld\r\n"
                           "Connection: close\r\n\r\n"
                           "%s",
                           SERVER_HTTP, title, SERVER_PROTOCOL,
                           timebuf, path, strlen(http), http);
+    }
+    else
+    {
+        length = snprintf(response, sizeof(response),
+                          "%s %s\r\n"
+                          "Server: %s\r\n"
+                          "Date: %s\r\n"
+                          "Content-Type: text/html; charset=utf-8\r\n"
+                          "Content-Length: %ld\r\n"
+                          "Connection: close\r\n\r\n"
+                          "%s",
+                          SERVER_HTTP, title, SERVER_PROTOCOL,
+                          timebuf, strlen(http), http);
+    }
     write_to_socket(socket, response, length);
 }
 
@@ -404,7 +422,7 @@ int process_request(void *arg)
             clean(newfd, arg);
             return ERROR;
         }
-        if(strchr(buffer,'\n') != NULL) /* Identify the end of the first line */
+        if (strchr(buffer, '\n') != NULL) /* Identify the end of the first line */
             break;
     }
     int parse = parsing(buffer, &method, &path, &version);
@@ -466,7 +484,6 @@ int main(int argc, char *argv[])
 
     server.sin_port = htons(port);
     server.sin_addr.s_addr = htonl(INADDR_ANY);
-
     if (bind(fd, (struct sockaddr *)&server, sizeof(server)) < 0)
     {
         perror("bind");
@@ -481,7 +498,7 @@ int main(int argc, char *argv[])
         destroy_threadpool(threadpool);
         return EXIT_FAILURE;
     }
-    printf("Server is listening on 127.0.0.1:%d\n", port);
+    printf("Server is listening on %d:%d\n", server.sin_addr.s_addr, port);
     while (true)
     {
         if (counter >= maxClients)
