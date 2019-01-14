@@ -12,7 +12,11 @@
 #include <unistd.h>
 #include "threadpool.h"
 
-typedef enum {false,true} bool;
+typedef enum
+{
+    false,
+    true
+} bool;
 #define ERROR -1
 #define BUFF 4000
 
@@ -109,8 +113,7 @@ void *do_work(void *p)
         if (pool->shutdown == 1)
         {
             pthread_mutex_unlock(&(pool->qlock));
-            pthread_exit(NULL);
-            break;
+            return NULL;
         }
         if (pool->qsize == 0 && pool->dont_accept == 0 && pool->shutdown == 0)
         {
@@ -120,8 +123,7 @@ void *do_work(void *p)
         if (pool->shutdown == 1)
         {
             pthread_mutex_unlock(&(pool->qlock));
-            pthread_exit(NULL);
-            break;
+            return NULL;
         }
 
         worker = dequeue(pool);
@@ -136,8 +138,7 @@ void *do_work(void *p)
         {
             pthread_mutex_unlock(&(pool->qlock));
             pthread_cond_signal(&(pool->q_empty));
-            pthread_exit(NULL);
-            break;
+            return NULL;
         }
         pthread_mutex_unlock(&(pool->qlock));
     }
@@ -154,7 +155,7 @@ void destroy_threadpool(threadpool *destroyme) // Debug and test with valgring
     while (destroyme->qsize > 0) /* wait for work queue to get empty */
         pthread_cond_wait(&destroyme->q_empty, &destroyme->qlock);
     destroyme->shutdown = 1;
-    pthread_cond_broadcast(&(destroyme->q_not_empty));/* wake up all worker threads */
+    pthread_cond_broadcast(&(destroyme->q_not_empty)); /* wake up all worker threads */
     pthread_mutex_unlock(&(destroyme->qlock));
 
     for (int i = 0; i < destroyme->num_threads; i++) /* Join all worker thread */

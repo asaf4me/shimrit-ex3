@@ -34,73 +34,7 @@ typedef enum
 #define SERVER_PROTOCOL "webserver/1.1"
 #define SERVER_HTTP "HTTP/1.1"
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
-
-#define HTTP_400                                  \
-    "<HTML>"                                      \
-    "<HEAD><TITLE>400 Bad Request</TITLE></HEAD>" \
-    "<BODY>"                                      \
-    "<H4>400 Bad request</H4>"                    \
-    "Bad Request."                                \
-    "</BODY>"                                     \
-    "</HTML>"
-
-#define HTTP_501                                    \
-    "<HTML>"                                        \
-    "<HEAD><TITLE>501 Not supported</TITLE></HEAD>" \
-    "<BODY><H4>501 Not supported</H4>"              \
-    "Method is not supported"                       \
-    "</BODY>"                                       \
-    "</HTML>"
-
-#define HTTP_404                                \
-    "<HTML>"                                    \
-    "<HEAD><TITLE>404 Not Found</TITLE></HEAD>" \
-    "<BODY><H4>404 Not Found</H4>"              \
-    "File not found."                           \
-    "</BODY>"                                   \
-    "</HTML>"
-
-#define HTTP_302                            \
-    "<HTML>"                                \
-    "<HEAD><TITLE>302 Found</TITLE></HEAD>" \
-    "<BODY><H4>302 Found</H4>"              \
-    "Directories must end with a slash."    \
-    "</BODY>"                               \
-    "</HTML>"
-
-#define HTTP_500                                            \
-    "<HTML>"                                                \
-    "<HEAD><TITLE>500 Internal Server Error</TITLE></HEAD>" \
-    "<BODY><H4>500 Internal Server Error</H4>"              \
-    "Some server side error."                               \
-    "</BODY>"                                               \
-    "</HTML>"
-
-#define HTTP_403                                \
-    "<HTML>"                                    \
-    "<HEAD><TITLE>403 Forbidden</TITLE></HEAD>" \
-    "<BODY><H4>403 Forbidden</H4>"              \
-    "Access denied."                            \
-    "</BODY>"                                   \
-    "</HTML>"
-
-#define DIRERCTOY_CONTENTS                             \
-    "<HTML>"                                           \
-    "<HEAD><TITLE>Index of %s</TITLE></HEAD>"          \
-    "<BODY>"                                           \
-    "<H4>Index of %s</H4>"                             \
-    "<table CELLSPACING=8>"                            \
-    "<tr>"                                             \
-    "<th>Name</th><th>Last Modified</th><th>Size</th>" \
-    "</tr>"                                            \
-    "%s"                                               \
-    "</table><HR>"                                     \
-    "<ADDRESS>%s</ADDRESS>"                            \
-    "</BODY>"                                          \
-    "</HTML>"
-
-#define DIR_CONTENTS_TEMPLATE \
-    "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>"
+#define DIR_CONTENTS_TEMPLATE \ "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>"
 
 /* END DEFINES */
 
@@ -130,51 +64,37 @@ void usage_message()
     printf("Usage: server <port> <pool-size> <max-number-of-request>\n");
 }
 
-/* Sending ERROR 500 */
-void internal_error(int socket)
-{
-    time_t now;
-    char timebuf[128];
-    memset(timebuf, 0, 128);
-    now = time(NULL);
-    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    char response[BUFF];
-    memset(response, 0, BUFF);
-    int length = snprintf(response, sizeof(response),
-             "%s 500 Internal Server Error\r\n"
-             "Server: %s\r\n"
-             "Date: %s\r\n"
-             "Content-Type: text/html; charset=utf-8\r\n"
-             "Content-Length: %ld\r\n"
-             "Connection: close\r\n\r\n"
-             "%s",
-             SERVER_HTTP, SERVER_PROTOCOL,
-             timebuf, strlen(HTTP_500), HTTP_500);
-    write_to_socket(socket, response, length);
-}
-
 /* Handle all the other HTTP response */
-void server_response(int socket, const char *msg, const char *http)
+void server_response(int socket, const char *title, const char *body, const char *path)
 {
-    time_t now;
-    char timebuf[128];
+    char http[BUFF], timebuf[128], response[BUFF + PATH_MAX];
     memset(timebuf, 0, 128);
+    memset(response, 0, BUFF + PATH_MAX);
+    memset(http, 0, BUFF);
+    snprintf(http, sizeof(http),
+             "<HTML>"
+             "<HEAD><TITLE>%s</TITLE></HEAD>"
+             "<BODY><H4>%s</H4>"
+             "%s."
+             "</BODY>"
+             "</HTML>",
+             title,
+             title, body);
+    time_t now;
     now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    char response[BUFF];
-    memset(response, 0, BUFF);
     int length = snprintf(response, sizeof(response),
-             "%s %s\r\n"
-             "Server: %s\r\n"
-             "Date: %s\r\n"
-             "Content-Type: text/html; charset=utf-8\r\n"
-             "Content-Length: %ld\r\n"
-             "Connection: close\r\n\r\n"
-             "%s",
-             SERVER_HTTP, msg, SERVER_PROTOCOL,
-             timebuf, strlen(http), http);
-    if (write_to_socket(socket, response, length) == ERROR)
-        internal_error(socket);
+                          "%s %s\r\n"
+                          "Server: %s\r\n"
+                          "Date: %s\r\n"
+                          "%s"
+                          "Content-Type: text/html; charset=utf-8\r\n"
+                          "Content-Length: %ld\r\n"
+                          "Connection: close\r\n\r\n"
+                          "%s",
+                          SERVER_HTTP, title, SERVER_PROTOCOL,
+                          timebuf, path, strlen(http), http);
+    write_to_socket(socket, response, length);
 }
 
 /* Convert string to int */
@@ -298,16 +218,16 @@ int send_file_via_socket(int newfd, char *file)
     now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
     int textLength = snprintf(response, sizeof(response),
-             "%s 200 \r\n"
-             "Server: %s\r\n"
-             "Date: %s\r\n"
-             "Content-Type: %s\r\n"
-             "Content-Length: %ld\r\n"
-             "Connection: close\r\n\r\n",
-             SERVER_HTTP, SERVER_PROTOCOL,
-             timebuf, mime, length);
+                              "%s 200 \r\n"
+                              "Server: %s\r\n"
+                              "Date: %s\r\n"
+                              "Content-Type: %s\r\n"
+                              "Content-Length: %ld\r\n"
+                              "Connection: close\r\n\r\n",
+                              SERVER_HTTP, SERVER_PROTOCOL,
+                              timebuf, mime, length);
     if (write_to_socket(newfd, response, textLength) == ERROR)
-        internal_error(newfd);
+        server_response(newfd, "500 Internal Server Error", "Some server side error", "");
     char *indexHtml = malloc(length * sizeof(char) + 1);
     if (indexHtml == NULL)
     {
@@ -392,39 +312,39 @@ int path_proccesor(char *path, int newfd)
     char *index = NULL;
     if (is_exist(++path) == false && strcmp(--path, "/") != 0) /* Return error -> 404 not found */
     {
-        server_response(newfd, "404 Not Found", HTTP_404);
+        server_response(newfd, "404 Not Found", "File not found", "");
         return SUCCESS;
     }
     if (is_directory(path) == true) /* If path is a directory */
     {
         if (path[strlen(path) - 1] != '/')
         {
-            server_response(newfd, "302 Found", HTTP_302);
+            server_response(newfd, "302 Found", "Directories must end with a slash", path);
             return SUCCESS;
         }
         if ((index = get_index(path, "index.html")) != NULL) /* Return index.html within the folder */
         {
             if (send_file_via_socket(newfd, index) == ERROR)
-                internal_error(newfd);
+                server_response(newfd, "500 Internal Server Error", "Some server side error", "");
             return SUCCESS;
         }
         /* Return the content dir */
-
+        return SUCCESS;
     }
     if (is_file(path) == true) /* If path is a file */
     {
         if (has_permission(path) == false)
         {
-            server_response(newfd, "403 Forbidden", HTTP_403);
+            server_response(newfd, "403 Forbidden", "Access denied", "");
             return SUCCESS;
         }
         if (send_file_via_socket(newfd, path) == ERROR)
-            internal_error(newfd);
+            server_response(newfd, "500 Internal Server Error", "Some server side error", "");
         return SUCCESS;
     }
     if (is_file(path) == false || has_permission(path) == false) /* If path is not a regular file or file has no read permission */
     {
-        server_response(newfd, "403 Forbidden", HTTP_403);
+        server_response(newfd, "403 Forbidden", "Access denied", "");
         return SUCCESS;
     }
     return SUCCESS;
@@ -460,40 +380,54 @@ int parsing(char req[], char *method[], char *path[], char *version[])
     return !ERROR;
 }
 
+/* Free the new fd and close the socket */
+void clean(int newfd, void *arg)
+{
+    if (arg != NULL)
+        free(arg);
+    close(newfd);
+}
+
 /* New sockets will processed by thread in this function */
 int process_request(void *arg)
 {
     int newfd = *(int *)arg, bytes;
     char buffer[BUFF];
-    char *method = NULL, *path = NULL, *version = NULL;
     memset(buffer, 0, BUFF);
-    if ((bytes = read(newfd, buffer, sizeof(buffer))) == -1)
+    char *method = NULL, *path = NULL, *version = NULL;
+    while (true)
     {
-        perror("read");
-        internal_error(newfd);
-        goto CLOSE;
+        if ((bytes = read(newfd, buffer, sizeof(buffer))) == -1) /* Read from socket */
+        {
+            perror("read");
+            server_response(newfd, "500 Internal Server Error", "Some server side error", "");
+            clean(newfd, arg);
+            return ERROR;
+        }
+        if(strchr(buffer,'\n') != NULL) /* Identify the end of the first line */
+            break;
     }
     int parse = parsing(buffer, &method, &path, &version);
     if (parse == ALLOC_ERROR)
     {
-        internal_error(newfd);
-        goto CLOSE;
+        server_response(newfd, "500 Internal Server Error", "Some server side error", "");
+        clean(newfd, arg);
+        return ERROR;
     }
     if (parse == ERROR) /* Bad requast -> HTTP_400 */
     {
-        server_response(newfd, "400 Bad Request", HTTP_400);
-        goto CLOSE;
+        server_response(newfd, "400 Bad Request", "Bad Request", "");
+        clean(newfd, arg);
+        return ERROR;
     }
     if (strcmp(method, "POST") == 0) /* Only support the get method */
     {
-        server_response(newfd, "501 Not supported", HTTP_501);
-        goto CLOSE;
+        server_response(newfd, "501 Not supported", "Method is not supported", "");
+        clean(newfd, arg);
+        return ERROR;
     }
     path_proccesor(path, newfd);
-    goto CLOSE;
-CLOSE:
-    free(arg);
-    close(newfd);
+    clean(newfd, arg);
     return !ERROR;
 }
 
@@ -505,7 +439,7 @@ int main(int argc, char *argv[])
         usage_message();
         return EXIT_FAILURE;
     }
-    signal(SIGPIPE, SIG_IGN); /* Prevent SIG_PIPE */
+    signal(SIGPIPE, SIG_IGN);                        /* Prevent SIG_PIPE */
     struct sockaddr_in server, client;               /* Used by bind() , Used by accept() */
     int fd, port, poolSize, maxClients, counter = 0; /* Socket descriptor , New socket descriptor , Port handle ,  Pool-size handle , Max-clients handle */
     unsigned int cli_len = sizeof(client);
