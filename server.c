@@ -56,7 +56,6 @@ typedef enum
     "Connection: close\r\n\r\n"           \
     "%s"
 
-#define DIR_CONTENTS_TEMPLATE \ "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>"
 /* END DEFINES */
 
 /* Wrinting to the socket */
@@ -107,7 +106,7 @@ void server_response(int socket, const char *title, const char *body, char *path
 /* Convert string to int */
 int get_int(char *argv)
 {
-    if (strcmp(argv, "0") == 0) /* check for identical 0 */
+    if (strcmp(argv, "0") == 0)
         return 0;
     int num = atoi(argv);
     if (num == 0)
@@ -214,6 +213,7 @@ int send_file_via_socket(int newfd, char *file)
     char *mime = get_mime_type(file);
     if (mime == NULL)
     {
+        close(filefd);
         fprintf(stderr, "unknown mime: %s.\n", file);
         return ERROR;
     }
@@ -262,10 +262,65 @@ bool has_permission(char *file)
 }
 
 /* Get the file list of directory */
-char *get_dir_content(const char *path)
+char *get_dir_content(const char *path, struct stat st)
 {
-
-    return NULL;
+    int size = BUFF + strlen(path);
+    char *html = malloc(size + 1);
+    char entity[ENTITY_LINE];
+    if (html == NULL)
+        return NULL;
+    memset(entity, 0, ENTITY_LINE);
+    memset(html, 0, size);
+    html[size] = '\0';
+    int length = snprintf(html, BUFF, "<HTML>"
+                                      "<HEAD><TITLE>Index of %s</TITLE></HEAD>"
+                                      "<BODY>"
+                                      "<H4>Index of %s</H4>"
+                                      "<table CELLSPACING=8>"
+                                      "<tr>"
+                                      "<th>Name</th><th>Last Modified</th><th>Size</th>",
+                          path, path);
+    DIR *directory = NULL;
+    if (strcmp(path, "/") == 0)
+    {
+        if ((directory = opendir("./")) == NULL)
+        {
+            free(html);
+            perror("opendir");
+            return NULL;
+        }
+    }
+    else
+    {
+        if ((directory = opendir(path)) == NULL)
+        {
+            free(html);
+            perror("opendir");
+            return NULL;
+        }
+    }
+    struct dirent *entry = NULL;
+    struct stat sd;
+    while ((entry = readdir(directory)) != NULL)
+    {
+        if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0)
+            continue;
+        if (stat(path, &sd) == ERROR)
+        {
+            perror("stat");
+            free(html);
+            closedir(directory);
+            return NULL;
+        }
+        if (S_ISDIR(sd.st_mode)) /* Identify for a directory */
+            length = snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), "");
+        else if (S_ISREG(sd.st_mode))
+            length = snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%ld</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), sd.st_size);
+        strncat(html, entity, ENTITY_LINE);
+    }
+    strncat(html, "</table><HR><ADDRESS>webserver/1.1</ADDRESS></BODY></HTML>", ENTITY_LINE);
+    closedir(directory);
+    return html;
 }
 
 /* Getting all the files within a directory */
@@ -275,17 +330,21 @@ int dir_content(const char *path, int newfd)
     if (stat(path, &st) == ERROR)
         return ERROR;
     char response[BUFF], timebuf[TIME_BUFF];
-    char *contents = NULL;
     memset(response, 0, BUFF);
     memset(timebuf, 0, TIME_BUFF);
+    char *contents = NULL;
     time_t now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    contents = get_dir_content(path);
+    contents = get_dir_content(path, st);
     if (contents == NULL)
         return ERROR;
-    int length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", "text/html", strlen(contents), "Last-Modified: ", ctime(&st.st_mtime), "");
-    if (write_to_socket(newfd, response, length) == ERROR)
+    int length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", "text/html", strlen(contents), "Last-Modified: ", ctime(&st.st_mtime), contents);
+    if (write_to_socket(newfd, response, length) == ERROR) /* Send the header + html */
+    {
+        free(contents);
         return ERROR;
+    }
+    free(contents);
     return !ERROR;
 }
 
