@@ -37,7 +37,7 @@ typedef enum
 #define SERVER_HTTP "HTTP/1.1"
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
 
-#define HTTP_HEADER                  \
+#define HTML_PAGE                    \
     "<HTML>"                         \
     "<HEAD><TITLE>%s</TITLE></HEAD>" \
     "<BODY><H4>%s</H4>"              \
@@ -45,7 +45,7 @@ typedef enum
     "</BODY>"                        \
     "</HTML>"
 
-#define HTTP_BODY                         \
+#define HTTP_HEADER                       \
     "%s %s\r\n"                           \
     "Server: %s\r\n"                      \
     "Date: %s\r\n"                        \
@@ -85,21 +85,21 @@ void usage_message()
 }
 
 /* Handle all the other HTTP response */
-void server_response(int socket, const char *title, const char *body, const char *path)
+void server_response(int socket, const char *title, const char *body, char *path)
 {
     char http[BUFF], timebuf[TIME_BUFF], response[BUFF + PATH_MAX];
     memset(timebuf, 0, TIME_BUFF);
     memset(response, 0, BUFF + PATH_MAX);
     memset(http, 0, BUFF);
-    snprintf(http, sizeof(http), HTTP_HEADER, title, title, body);
+    snprintf(http, sizeof(http), HTML_PAGE, title, title, body);
     time_t now;
     int length = 0;
     now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
     if (strlen(path) > 0)
-        length = snprintf(response, sizeof(response), HTTP_BODY, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: ", path, "text/html", strlen(http), http);
+        length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: ", path, "text/html", strlen(http), http);
     else
-        length = snprintf(response, sizeof(response), HTTP_BODY, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "", "", "text/html", strlen(http), http);
+        length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "", "", "text/html", strlen(http), http);
     write_to_socket(socket, response, length);
 }
 
@@ -223,7 +223,7 @@ int send_file_via_socket(int newfd, char *file)
     memset(timebuf, 0, TIME_BUFF);
     now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    int textLength = snprintf(response, sizeof(response), HTTP_BODY, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", mime, length,"");
+    int textLength = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", mime, length, "");
     if (write_to_socket(newfd, response, textLength) == ERROR)
         server_response(newfd, "500 Internal Server Error", "Some server side error", "");
     char *indexHtml = malloc(length * sizeof(char) + 1);
@@ -262,11 +262,42 @@ bool has_permission(char *file)
     return false;
 }
 
-/* Getting all the files within a directory */
-char *get_dir_content(const char *path, int newfd)
+/* Get the file list of directory */
+char *get_dir_content(const char *path)
 {
 
     return NULL;
+}
+
+/* Getting all the files within a directory */
+int dir_content(const char *path, int newfd)
+{
+    struct stat st;
+    if (stat(path, &st) == ERROR)
+        return ERROR;
+    char response[BUFF], timebuf[TIME_BUFF];
+    char *contents = NULL;
+    memset(response, 0, BUFF);
+    memset(timebuf, 0, TIME_BUFF);
+    time_t now = time(NULL);
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    contents = get_dir_content(path);
+    if (contents == NULL)
+        return ERROR;
+    int length = snprintf(response, sizeof(response) + strlen(contents),
+                          "%s 200 OK\r\n"
+                          "Server: %s\r\n"
+                          "Date: %s\r\n"
+                          "Content-Type: text/html; charset=utf-8\r\n"
+                          "Content-Length: %ld\r\n"
+                          "Last-Modified: %ld\r\n"
+                          "Connection: close\r\n\r\n"
+                          "%s",
+                          SERVER_HTTP, SERVER_PROTOCOL,
+                          timebuf, strlen(contents), st.st_mtime, contents);
+    if (write_to_socket(newfd, response, length) == ERROR)
+        return ERROR;
+    return !ERROR;
 }
 
 /* Searching for the index.html within a directory */
@@ -326,7 +357,8 @@ int path_proccesor(char *path, int newfd)
                 server_response(newfd, "500 Internal Server Error", "Some server side error", "");
             return SUCCESS;
         }
-        /* Return the content dir */
+        if (dir_content(path, newfd) == ERROR) /* Return the content dir */
+            server_response(newfd, "500 Internal Server Error", "Some server side error", "");
         return SUCCESS;
     }
     if (is_file(path) == true) /* If path is a file */
