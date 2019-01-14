@@ -25,7 +25,7 @@ typedef enum
 
 #define ERROR -1
 #define PATH_MAX 4096
-#define ENTITY_PAGE 500
+#define ENTITY_LINE 500
 #define SUCCESS 0
 #define FILE 1
 #define DIRECTORY 2
@@ -35,8 +35,26 @@ typedef enum
 #define SERVER_PROTOCOL "webserver/1.1"
 #define SERVER_HTTP "HTTP/1.1"
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
-#define DIR_CONTENTS_TEMPLATE \ "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>"
 
+#define HTTP_HEADER                  \
+    "<HTML>"                         \
+    "<HEAD><TITLE>%s</TITLE></HEAD>" \
+    "<BODY><H4>%s</H4>"              \
+    "%s."                            \
+    "</BODY>"                        \
+    "</HTML>"
+
+#define HTTP_BODY                                \
+    "%s %s\r\n"                                  \
+    "Server: %s\r\n"                             \
+    "Date: %s\r\n"                               \
+    "%s /%s\\\r\n"                               \
+    "Content-Type: text/html; charset=utf-8\r\n" \
+    "Content-Length: %ld\r\n"                    \
+    "Connection: close\r\n\r\n"                  \
+    "%s"
+
+#define DIR_CONTENTS_TEMPLATE \ "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>"
 /* END DEFINES */
 
 /* Wrinting to the socket */
@@ -72,46 +90,15 @@ void server_response(int socket, const char *title, const char *body, const char
     memset(timebuf, 0, 128);
     memset(response, 0, BUFF + PATH_MAX);
     memset(http, 0, BUFF);
-    snprintf(http, sizeof(http),
-             "<HTML>"
-             "<HEAD><TITLE>%s</TITLE></HEAD>"
-             "<BODY><H4>%s</H4>"
-             "%s."
-             "</BODY>"
-             "</HTML>",
-             title,
-             title, body);
+    snprintf(http, sizeof(http), HTTP_HEADER, title, title, body);
     time_t now;
     int length = 0;
     now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    if (strlen(path) > 0)
-    {
-        length = snprintf(response, sizeof(response),
-                          "%s %s\r\n"
-                          "Server: %s\r\n"
-                          "Date: %s\r\n"
-                          "Location: /%s\\\r\n"
-                          "Content-Type: text/html; charset=utf-8\r\n"
-                          "Content-Length: %ld\r\n"
-                          "Connection: close\r\n\r\n"
-                          "%s",
-                          SERVER_HTTP, title, SERVER_PROTOCOL,
-                          timebuf, path, strlen(http), http);
-    }
+    if(strlen(path) > 0)
+        length = snprintf(response, sizeof(response),HTTP_BODY, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: ", path, strlen(http), http);
     else
-    {
-        length = snprintf(response, sizeof(response),
-                          "%s %s\r\n"
-                          "Server: %s\r\n"
-                          "Date: %s\r\n"
-                          "Content-Type: text/html; charset=utf-8\r\n"
-                          "Content-Length: %ld\r\n"
-                          "Connection: close\r\n\r\n"
-                          "%s",
-                          SERVER_HTTP, title, SERVER_PROTOCOL,
-                          timebuf, strlen(http), http);
-    }
+        length = snprintf(response, sizeof(response),HTTP_BODY, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "", "", strlen(http), http);
     write_to_socket(socket, response, length);
 }
 
@@ -283,9 +270,8 @@ bool has_permission(char *file)
 }
 
 /* Getting all the files within a directory */
-char *get_dir_content(char *path, char *file)
+char *get_dir_content(const char *path, int newfd)
 {
-
     return NULL;
 }
 
