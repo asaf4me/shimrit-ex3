@@ -37,6 +37,17 @@ typedef enum
 #define SERVER_HTTP "HTTP/1.1"
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
 
+#define HTTP_HEADER                       \
+    "%s %s\r\n"                           \
+    "Server: %s\r\n"                      \
+    "Date: %s\r\n"                        \
+    "%s %s\\\r\n"                         \
+    "Content-Type: %s; charset=utf-8\r\n" \
+    "Content-Length: %ld\r\n"             \
+    "%s %s\r\n"                           \
+    "Connection: close\r\n\r\n"           \
+    "%s"
+
 #define HTML_PAGE                    \
     "<HTML>"                         \
     "<HEAD><TITLE>%s</TITLE></HEAD>" \
@@ -44,17 +55,6 @@ typedef enum
     "%s."                            \
     "</BODY>"                        \
     "</HTML>"
-
-#define HTTP_HEADER                       \
-    "%s %s\r\n"                           \
-    "Server: %s\r\n"                      \
-    "Date: %s\r\n"                        \
-    "%s /%s\\\r\n"                        \
-    "Content-Type: %s; charset=utf-8\r\n" \
-    "Content-Length: %ld\r\n"             \
-    "%s %s\r\n"                           \
-    "Connection: close\r\n\r\n"           \
-    "%s"
 
 /* END DEFINES */
 
@@ -88,9 +88,6 @@ void usage_message()
 void server_response(int socket, const char *title, const char *body, char *path)
 {
     char http[BUFF], timebuf[TIME_BUFF], response[BUFF + PATH_MAX];
-    memset(timebuf, 0, TIME_BUFF);
-    memset(response, 0, BUFF + PATH_MAX);
-    memset(http, 0, BUFF);
     snprintf(http, sizeof(http), HTML_PAGE, title, title, body);
     time_t now;
     int length = 0;
@@ -193,10 +190,33 @@ off_t get_size(int file)
     return length;
 }
 
-/* Transfer file via socket */
-int send_file_via_socket(int newfd, char *file)
+/* Secure open directory */
+DIR *opendir_s(const char *path)
 {
-    int filefd, bytes;
+    DIR *directory;
+    if (strcmp(path, "/") == 0)
+    {
+        if ((directory = opendir("./")) == NULL)
+        {
+            perror("opendir");
+            return NULL;
+        }
+    }
+    else
+    {
+        if ((directory = opendir(path)) == NULL)
+        {
+            perror("opendir");
+            return NULL;
+        }
+    }
+    return directory;
+}
+
+/* Secure open file */
+int open_s(char *file)
+{
+    int filefd;
     if (file[0] == '/')
         ++file;
     if ((filefd = open(file, O_RDONLY)) == ERROR)
@@ -204,6 +224,32 @@ int send_file_via_socket(int newfd, char *file)
         perror("open");
         return ERROR;
     }
+    return filefd;
+}
+
+/* Check for file permission */
+bool has_permission(char *file)
+{
+    if (file[0] == '/')
+        ++file;
+    int fileFd;
+    if ((fileFd = open(file, O_RDONLY)) >= 0)
+    {
+        close(fileFd);
+        return true;
+    }
+    close(fileFd);
+    return false;
+}
+
+/* Transfer file via socket */
+int send_file_via_socket(int newfd, char *file)
+{
+    int filefd, bytes;
+    char response[BUFF], timebuf[TIME_BUFF];
+
+    if ((filefd = open_s(file)) == ERROR)
+        return ERROR;
     off_t length = get_size(filefd);
     if (length == ERROR)
     {
@@ -217,9 +263,6 @@ int send_file_via_socket(int newfd, char *file)
         fprintf(stderr, "unknown mime: %s.\n", file);
         return ERROR;
     }
-    char response[BUFF], timebuf[TIME_BUFF];
-    memset(response, 0, BUFF);
-    memset(timebuf, 0, TIME_BUFF);
     time_t now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
     int textLength = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", mime, length, "", "", "");
@@ -247,20 +290,6 @@ int send_file_via_socket(int newfd, char *file)
     return SUCCESS;
 }
 
-bool has_permission(char *file)
-{
-    if (file[0] == '/')
-        ++file;
-    int fileFd;
-    if ((fileFd = open(file, O_RDONLY)) >= 0)
-    {
-        close(fileFd);
-        return true;
-    }
-    close(fileFd);
-    return false;
-}
-
 /* Get the file list of directory */
 char *get_dir_content(const char *path, struct stat st)
 {
@@ -280,31 +309,13 @@ char *get_dir_content(const char *path, struct stat st)
                          "<tr>"
                          "<th>Name</th><th>Last Modified</th><th>Size</th>",
              path, path);
-    DIR *directory = NULL;
-    if (strcmp(path, "/") == 0)
-    {
-        if ((directory = opendir("./")) == NULL)
-        {
-            free(html);
-            perror("opendir");
-            return NULL;
-        }
-    }
-    else
-    {
-        if ((directory = opendir(path)) == NULL)
-        {
-            free(html);
-            perror("opendir");
-            return NULL;
-        }
-    }
+    DIR *directory = opendir_s(path);
+    if (directory == NULL)
+        return NULL;
     struct dirent *entry = NULL;
     struct stat sd;
     while ((entry = readdir(directory)) != NULL)
     {
-        if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0)
-            continue;
         if (stat(path, &sd) == ERROR)
         {
             perror("stat");
@@ -332,8 +343,6 @@ int dir_content(const char *path, int newfd)
     if (stat(path, &st) == ERROR)
         return ERROR;
     char response[BUFF], timebuf[TIME_BUFF];
-    memset(response, 0, BUFF);
-    memset(timebuf, 0, TIME_BUFF);
     char *contents = NULL;
     time_t now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
@@ -353,23 +362,9 @@ int dir_content(const char *path, int newfd)
 /* Searching for the index.html within a directory */
 char *get_index(char *path, char *file)
 {
-    DIR *directory;
-    if (strcmp(path, "/") == 0)
-    {
-        if ((directory = opendir("./")) == NULL)
-        {
-            perror("opendir");
-            return NULL;
-        }
-    }
-    else
-    {
-        if ((directory = opendir(path)) == NULL)
-        {
-            perror("opendir");
-            return NULL;
-        }
-    }
+    DIR *directory = opendir_s(path);
+    if (directory == NULL)
+        return NULL;
     struct dirent *entry;
     while ((entry = readdir(directory)) != NULL)
     {
