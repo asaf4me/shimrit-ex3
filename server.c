@@ -37,15 +37,14 @@ typedef enum
 #define SERVER_HTTP "HTTP/1.1"
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
 
-#define HTTP_HEADER                       \
-    "%s %s\r\n"                           \
-    "Server: %s\r\n"                      \
-    "Date: %s\r\n"                        \
-    "%s %s\\\r\n"                         \
-    "Content-Type: %s; charset=utf-8\r\n" \
-    "Content-Length: %ld\r\n"             \
-    "%s %s\r\n"                           \
-    "Connection: close\r\n\r\n"           \
+#define HTTP_HEADER             \
+    "%s %s\r\n"                 \
+    "Server: %s\r\n"            \
+    "Date: %s\r\n"              \
+    "Content-Type: %s\r\n"      \
+    "Content-Length: %ld\r\n"   \
+    "%s %s\r\n"                 \
+    "Connection: close\r\n\r\n" \
     "%s"
 
 #define HTML_PAGE                    \
@@ -56,16 +55,17 @@ typedef enum
     "</BODY>"                        \
     "</HTML>"
 
+#define DIR_CONTENT_TEMPLATE
+
 /* END DEFINES */
 
 /* Wrinting to the socket */
 int write_to_socket(int sock, char *msg, size_t length)
 {
     int bytes = 0, sum = 0;
-    const char *pointer = msg;
     while (true)
     {
-        bytes = write(sock, pointer, length);
+        bytes = write(sock, msg, length);
         sum += bytes;
         if (sum == strlen(msg))
             break;
@@ -84,20 +84,55 @@ void usage_message()
     printf("Usage: server <port> <pool-size> <max-number-of-request>\n");
 }
 
+char *make_302(const char *title, const char *path, const char *http)
+{
+    char timebuf[TIME_BUFF];
+    char *html = (char *)malloc(BUFF + strlen(path) + 1);
+    if (!html)
+        return NULL;
+    time_t now = time(NULL);
+    int length = 0;
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    length = snprintf(html, BUFF + strlen(path), "%s %s\r\n"
+                                                 "Server: %s\r\n"
+                                                 "Date: %s\r\n"
+                                                 "%s%s\\\r\n"
+                                                 "Content-Type: %s; charset=utf-8\r\n"
+                                                 "Content-Length: %ld\r\n"
+                                                 "Connection: close\r\n\r\n"
+                                                 "%s",
+                      SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: /", path, "text/html", strlen(http), http);
+    html[length] = '\0';
+    return html;
+}
+
+void *make_html(const char *title, const char *http)
+{
+    char timebuf[TIME_BUFF];
+    char *html = (char *)malloc(BUFF + 1);
+    if (!html)
+        return NULL;
+    time_t now = time(NULL);
+    int length = 0;
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    length = snprintf(html, BUFF, HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "text/html", strlen(http), "", "", http);
+    html[length] = '\0';
+    return html;
+}
+
 /* Handle all the other HTTP response */
 void server_response(int socket, const char *title, const char *body, char *path)
 {
-    char http[BUFF], timebuf[TIME_BUFF], response[BUFF + PATH_MAX];
+    char http[BUFF], *response;
     snprintf(http, sizeof(http), HTML_PAGE, title, title, body);
-    time_t now;
-    int length = 0;
-    now = time(NULL);
-    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
     if (strlen(path) > 0)
-        length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: ", path, "text/html", strlen(http), "", "", http);
+        response = make_302(title, path, http);
     else
-        length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "", "", "text/html", strlen(http), "", "", http);
-    write_to_socket(socket, response, length);
+        response = make_html(title, http);
+    if (!response)
+        return;
+    write_to_socket(socket, response, strlen(response));
+    free(response);
 }
 
 /* Convert string to int */
@@ -265,9 +300,9 @@ int send_file_via_socket(int newfd, char *file)
     }
     time_t now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    int textLength = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", mime, length, "", "", "");
+    int textLength = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, mime, length, "", "", "");
     if (write_to_socket(newfd, response, textLength) == ERROR)
-        server_response(newfd, "500 Internal Server Error", "Some server side error", "");
+        return ERROR;
     char *indexHtml = malloc(length * sizeof(char) + 1);
     if (indexHtml == NULL)
     {
@@ -293,7 +328,7 @@ int send_file_via_socket(int newfd, char *file)
 /* Get the file list of directory */
 char *get_dir_content(const char *path, struct stat st)
 {
-    int size = BUFF + strlen(path), len = 0;
+    int size = BUFF + ENTITY_LINE, len = 0;
     char *html = malloc(size + 1);
     char entity[ENTITY_LINE];
     if (html == NULL)
@@ -328,8 +363,15 @@ char *get_dir_content(const char *path, struct stat st)
         else if (S_ISREG(sd.st_mode)) /* Identify for a regular file */
             len = snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%ld</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), sd.st_size);
         strncat(html, entity, ENTITY_LINE);
-        if (len > ENTITY_LINE)
-            fprintf(stderr, "assumption of 500 entity line");
+        if (len == size)
+        {
+            html = realloc(html, size + ENTITY_LINE);
+            if (html == NULL)
+            {
+                closedir(directory);
+                return NULL;
+            }
+        }
     }
     strncat(html, "</table><HR><ADDRESS>webserver/1.1</ADDRESS></BODY></HTML>", ENTITY_LINE);
     closedir(directory);
@@ -349,7 +391,7 @@ int dir_content(const char *path, int newfd)
     contents = get_dir_content(path, st);
     if (contents == NULL)
         return ERROR;
-    int length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "", "", "text/html", strlen(contents), "Last-Modified: ", ctime(&st.st_mtime), contents);
+    int length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "text/html", strlen(contents), "Last-Modified: ", ctime(&st.st_mtime), contents);
     if (write_to_socket(newfd, response, length) == ERROR) /* Send the header + html */
     {
         free(contents);
@@ -384,36 +426,39 @@ char *get_index(char *path, char *file)
 int path_proccesor(char *path, int newfd)
 {
     char *index = NULL;
-    if (is_exist(++path) == false && strcmp(--path, "/") != 0) /* Return error -> 404 not found */
-    {
-        server_response(newfd, "404 Not Found", "File not found", "");
-    }
-    else if (is_directory(path) == true) /* If path is a directory */
+    if (is_directory(path) == true) /* If path is a directory */
     {
         if (path[strlen(path) - 1] != '/')
         {
             server_response(newfd, "302 Found", "Directories must end with a slash", path);
+            return SUCCESS;
         }
-        else if ((index = get_index(path, "index.html")) != NULL) /* Return index.html within the folder */
+        if ((index = get_index(path, "index.html")) != NULL) /* Return index.html within the folder */
         {
             if (send_file_via_socket(newfd, index) == ERROR)
                 server_response(newfd, "500 Internal Server Error", "Some server side error", "");
+            return SUCCESS;
         }
-        else if (dir_content(path, newfd) == ERROR) /* Return the content dir */
+        if (dir_content(path, newfd) == ERROR) /* Return the content dir */
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
+        return SUCCESS;
     }
-    else if (is_file(path) == true) /* If path is a file */
+    if (is_file(path) == true) /* If path is a file */
     {
         if (has_permission(path) == false)
         {
             server_response(newfd, "403 Forbidden", "Access denied", "");
+            return SUCCESS;
         }
-        else if (send_file_via_socket(newfd, path) == ERROR)
+        if (send_file_via_socket(newfd, path) == ERROR)
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
+        return SUCCESS;
     }
-    else if (is_file(path) == false || has_permission(path) == false) /* If path is not a regular file or file has no read permission */
+    if ((is_file(path) == false || has_permission(path) == false)) /* If path is not a regular file or file has no read permission */
     {
+        printf("im here! path is %s\n", path);
         server_response(newfd, "403 Forbidden", "Access denied", "");
+        return SUCCESS;
     }
     return SUCCESS;
 }
@@ -491,6 +536,12 @@ int process_request(void *arg)
     if (strcmp(method, "POST") == 0) /* Only support the get method */
     {
         server_response(newfd, "501 Not supported", "Method is not supported", "");
+        clean(newfd, arg);
+        return ERROR;
+    }
+    if (is_exist(++path) == false && strcmp(--path, "/") != 0) /* Return error -> 404 not found */
+    {
+        server_response(newfd, "404 Not Found", "File not found", "");
         clean(newfd, arg);
         return ERROR;
     }
