@@ -25,6 +25,7 @@ typedef enum
 
 #define ERROR -1
 #define TIME_BUFF 128
+#define HTML_BUFF 300
 #define PATH_MAX 4096
 #define ENTITY_LINE 500
 #define SUCCESS 0
@@ -43,7 +44,6 @@ typedef enum
     "Date: %s\r\n"              \
     "Content-Type: %s\r\n"      \
     "Content-Length: %ld\r\n"   \
-    "%s %s\r\n"                 \
     "Connection: close\r\n\r\n" \
     "%s"
 
@@ -87,35 +87,35 @@ void usage_message()
 char *make_302(const char *title, const char *path, const char *http)
 {
     char timebuf[TIME_BUFF];
-    char *html = (char *)malloc(BUFF + strlen(path) + 1);
+    char *html = (char *)malloc(ENTITY_LINE + strlen(path) + 1);
     if (!html)
         return NULL;
     time_t now = time(NULL);
     int length = 0;
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    length = snprintf(html, BUFF + strlen(path), "%s %s\r\n"
-                                                 "Server: %s\r\n"
-                                                 "Date: %s\r\n"
-                                                 "%s%s\\\r\n"
-                                                 "Content-Type: %s; charset=utf-8\r\n"
-                                                 "Content-Length: %ld\r\n"
-                                                 "Connection: close\r\n\r\n"
-                                                 "%s",
+    length = snprintf(html, ENTITY_LINE + strlen(path), "%s %s\r\n"
+                                                        "Server: %s\r\n"
+                                                        "Date: %s\r\n"
+                                                        "%s%s\\\r\n"
+                                                        "Content-Type: %s; charset=utf-8\r\n"
+                                                        "Content-Length: %ld\r\n"
+                                                        "Connection: close\r\n\r\n"
+                                                        "%s",
                       SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: /", path, "text/html", strlen(http), http);
     html[length] = '\0';
     return html;
 }
 
-void *make_html(const char *title, const char *http)
+void *regular_reponse(const char *title, const char *http)
 {
     char timebuf[TIME_BUFF];
-    char *html = (char *)malloc(BUFF + 1);
+    char *html = (char *)malloc(ENTITY_LINE + 1);
     if (!html)
         return NULL;
     time_t now = time(NULL);
     int length = 0;
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    length = snprintf(html, BUFF, HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "text/html", strlen(http), "", "", http);
+    length = snprintf(html, ENTITY_LINE, HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "text/html", strlen(http), http);
     html[length] = '\0';
     return html;
 }
@@ -123,12 +123,12 @@ void *make_html(const char *title, const char *http)
 /* Handle all the other HTTP response */
 void server_response(int socket, const char *title, const char *body, char *path)
 {
-    char http[BUFF], *response;
+    char http[ENTITY_LINE], *response;
     snprintf(http, sizeof(http), HTML_PAGE, title, title, body);
     if (strlen(path) > 0)
         response = make_302(title, path, http);
     else
-        response = make_html(title, http);
+        response = regular_reponse(title, http);
     if (!response)
         return;
     write_to_socket(socket, response, strlen(response));
@@ -281,7 +281,7 @@ bool has_permission(char *file)
 int send_file_via_socket(int newfd, char *file)
 {
     int filefd, bytes;
-    char response[BUFF], timebuf[TIME_BUFF];
+    char response[ENTITY_LINE], timebuf[TIME_BUFF];
 
     if ((filefd = open_s(file)) == ERROR)
         return ERROR;
@@ -300,7 +300,7 @@ int send_file_via_socket(int newfd, char *file)
     }
     time_t now = time(NULL);
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    int textLength = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, mime, length, "", "", "");
+    int textLength = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, mime, length, "");
     if (write_to_socket(newfd, response, textLength) == ERROR)
         return ERROR;
     char *indexHtml = malloc(length * sizeof(char) + 1);
@@ -326,56 +326,51 @@ int send_file_via_socket(int newfd, char *file)
 }
 
 /* Get the file list of directory */
-char *get_dir_content(const char *path, struct stat st)
+char *get_dir_content(const char *path)
 {
-    int size = BUFF + ENTITY_LINE, len = 0;
-    char *html = malloc(size + 1);
-    char entity[ENTITY_LINE];
-    if (html == NULL)
-        return NULL;
-    memset(entity, 0, ENTITY_LINE);
-    memset(html, 0, size);
-    html[size] = '\0';
-    snprintf(html, BUFF, "<HTML>"
-                         "<HEAD><TITLE>Index of %s</TITLE></HEAD>"
-                         "<BODY>"
-                         "<H4>Index of %s</H4>"
-                         "<table CELLSPACING=8>"
-                         "<tr>"
-                         "<th>Name</th><th>Last Modified</th><th>Size</th>",
-             path, path);
-    DIR *directory = opendir_s(path);
-    if (directory == NULL)
-        return NULL;
+    char entity[ENTITY_LINE], *contents;
+    int length = 0, counter = 0;
     struct dirent *entry = NULL;
     struct stat sd;
+    DIR *directory = opendir_s(path);
+    if (directory == NULL)
+    {
+        fprintf(stderr,"no such directory %s\n",path);
+        return NULL;
+    }
+    while ((entry = readdir(directory)) != NULL) /* Count the number of entities */
+        counter++;
+    length = (ENTITY_LINE * counter + HTML_BUFF + strlen(path) + 1);
+    contents = malloc(length);
+    if (contents == NULL)
+        return NULL;
+    snprintf(contents, HTML_BUFF, "<HTML>"
+                                  "<HEAD><TITLE>Index of %s</TITLE></HEAD>"
+                                  "<BODY>"
+                                  "<H4>Index of %s</H4>"
+                                  "<table CELLSPACING=8>"
+                                  "<tr>"
+                                  "<th>Name</th><th>Last Modified</th><th>Size</th>",
+             path, path);
+    rewinddir(directory);
     while ((entry = readdir(directory)) != NULL)
     {
         if (stat(path, &sd) == ERROR)
         {
             perror("stat");
-            free(html);
+            free(contents);
             closedir(directory);
             return NULL;
         }
         if (S_ISDIR(sd.st_mode)) /* Identify for a directory */
-            len = snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), "");
+            snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), "");
         else if (S_ISREG(sd.st_mode)) /* Identify for a regular file */
-            len = snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%ld</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), sd.st_size);
-        strncat(html, entity, ENTITY_LINE);
-        if (len == size)
-        {
-            html = realloc(html, size + ENTITY_LINE);
-            if (html == NULL)
-            {
-                closedir(directory);
-                return NULL;
-            }
-        }
+            snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%ld</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), sd.st_size);
+        strncat(contents, entity, ENTITY_LINE);
     }
-    strncat(html, "</table><HR><ADDRESS>webserver/1.1</ADDRESS></BODY></HTML>", ENTITY_LINE);
+    strncat(contents, "</table><HR><ADDRESS>webserver/1.1</ADDRESS></BODY></HTML>", ENTITY_LINE);
     closedir(directory);
-    return html;
+    return contents;
 }
 
 /* Getting all the files within a directory */
@@ -384,15 +379,28 @@ int dir_content(const char *path, int newfd)
     struct stat st;
     if (stat(path, &st) == ERROR)
         return ERROR;
-    char response[BUFF], timebuf[TIME_BUFF];
-    char *contents = NULL;
-    time_t now = time(NULL);
-    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    contents = get_dir_content(path, st);
+    char response[HTML_BUFF], timebuf[TIME_BUFF];
+    char *contents;
+    contents = get_dir_content(path);
     if (contents == NULL)
         return ERROR;
-    int length = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "text/html", strlen(contents), "Last-Modified: ", ctime(&st.st_mtime), contents);
+    time_t now = time(NULL);
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    int length = snprintf(response, HTML_BUFF,
+                          "%s %s\r\n"
+                          "Server: %s\r\n"
+                          "Date: %s\r\n"
+                          "Content-Type: %s\r\n"
+                          "Content-Length: %ld\r\n"
+                          "Last-Modified: %s\r\n"
+                          "Connection: close\r\n\r\n",
+                          SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "text/html", strlen(contents), ctime(&st.st_mtime));
     if (write_to_socket(newfd, response, length) == ERROR) /* Send the header + html */
+    {
+        free(contents);
+        return ERROR;
+    }
+    if (write_to_socket(newfd, contents, strlen(contents)) == ERROR) /* Send the header + html */
     {
         free(contents);
         return ERROR;
@@ -456,7 +464,6 @@ int path_proccesor(char *path, int newfd)
     }
     if ((is_file(path) == false || has_permission(path) == false)) /* If path is not a regular file or file has no read permission */
     {
-        printf("im here! path is %s\n", path);
         server_response(newfd, "403 Forbidden", "Access denied", "");
         return SUCCESS;
     }
