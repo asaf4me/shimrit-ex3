@@ -27,7 +27,7 @@ typedef enum
 #define TIME_BUFF 128
 #define HTML_BUFF 300
 #define PATH_MAX 4096
-#define ENTITY_LINE 500
+#define ENTITY_LINE 600
 #define SUCCESS 0
 #define FILE 1
 #define DIRECTORY 2
@@ -87,20 +87,20 @@ void usage_message()
 char *make_302(const char *title, const char *path, const char *http)
 {
     char timebuf[TIME_BUFF];
-    char *html = (char *)malloc(ENTITY_LINE + strlen(path) + 1);
+    char *html = (char *)malloc(HTML_BUFF + strlen(path) + 1);
     if (!html)
         return NULL;
     time_t now = time(NULL);
     int length = 0;
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    length = snprintf(html, ENTITY_LINE + strlen(path), "%s %s\r\n"
-                                                        "Server: %s\r\n"
-                                                        "Date: %s\r\n"
-                                                        "%s%s\\\r\n"
-                                                        "Content-Type: %s; charset=utf-8\r\n"
-                                                        "Content-Length: %ld\r\n"
-                                                        "Connection: close\r\n\r\n"
-                                                        "%s",
+    length = snprintf(html, HTML_BUFF + strlen(path), "%s %s\r\n"
+                                                      "Server: %s\r\n"
+                                                      "Date: %s\r\n"
+                                                      "%s%s\\\r\n"
+                                                      "Content-Type: %s; charset=utf-8\r\n"
+                                                      "Content-Length: %ld\r\n"
+                                                      "Connection: close\r\n\r\n"
+                                                      "%s",
                       SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "Location: /", path, "text/html", strlen(http), http);
     html[length] = '\0';
     return html;
@@ -109,13 +109,13 @@ char *make_302(const char *title, const char *path, const char *http)
 void *regular_reponse(const char *title, const char *http)
 {
     char timebuf[TIME_BUFF];
-    char *html = (char *)malloc(ENTITY_LINE + 1);
+    char *html = (char *)malloc(HTML_BUFF + 1);
     if (!html)
         return NULL;
     time_t now = time(NULL);
     int length = 0;
     strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    length = snprintf(html, ENTITY_LINE, HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "text/html", strlen(http), http);
+    length = snprintf(html, HTML_BUFF, HTTP_HEADER, SERVER_HTTP, title, SERVER_PROTOCOL, timebuf, "text/html", strlen(http), http);
     html[length] = '\0';
     return html;
 }
@@ -123,7 +123,7 @@ void *regular_reponse(const char *title, const char *http)
 /* Handle all the other HTTP response */
 void server_response(int socket, const char *title, const char *body, char *path)
 {
-    char http[ENTITY_LINE], *response;
+    char http[HTML_BUFF], *response;
     snprintf(http, sizeof(http), HTML_PAGE, title, title, body);
     if (strlen(path) > 0)
         response = make_302(title, path, http);
@@ -225,6 +225,14 @@ off_t get_size(int file)
     return length;
 }
 
+/* Get date and time */
+char *get_time(time_t t, char *str, int size)
+{
+    struct tm temp;
+    strftime(str, size, RFC1123FMT, gmtime_r(&t, &temp));
+    return str;
+}
+
 /* Secure open directory */
 DIR *opendir_s(const char *path)
 {
@@ -281,7 +289,7 @@ bool has_permission(char *file)
 int send_file_via_socket(int newfd, char *file)
 {
     int filefd, bytes;
-    char response[ENTITY_LINE], timebuf[TIME_BUFF];
+    char response[HTML_BUFF], timebuf[TIME_BUFF];
 
     if ((filefd = open_s(file)) == ERROR)
         return ERROR;
@@ -328,14 +336,14 @@ int send_file_via_socket(int newfd, char *file)
 /* Get the file list of directory */
 char *get_dir_content(const char *path)
 {
-    char entity[ENTITY_LINE], *contents;
+    char entity[ENTITY_LINE], fileSize[TIME_BUFF], *contents;
     int length = 0, counter = 0;
     struct dirent *entry = NULL;
     struct stat sd;
     DIR *directory = opendir_s(path);
     if (directory == NULL)
     {
-        fprintf(stderr,"no such directory %s\n",path);
+        fprintf(stderr, "no such directory %s\n", path);
         return NULL;
     }
     while ((entry = readdir(directory)) != NULL) /* Count the number of entities */
@@ -355,17 +363,15 @@ char *get_dir_content(const char *path)
     rewinddir(directory);
     while ((entry = readdir(directory)) != NULL)
     {
-        if (stat(path, &sd) == ERROR)
-        {
-            perror("stat");
-            free(contents);
-            closedir(directory);
-            return NULL;
-        }
+        stat(entry->d_name, &sd);
         if (S_ISDIR(sd.st_mode)) /* Identify for a directory */
             snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), "");
         else if (S_ISREG(sd.st_mode)) /* Identify for a regular file */
-            snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%ld</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), sd.st_size);
+        {
+            snprintf(fileSize, sizeof(fileSize), "%ld bytes", sd.st_size);
+            snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), fileSize);
+        }
+
         strncat(contents, entity, ENTITY_LINE);
     }
     strncat(contents, "</table><HR><ADDRESS>webserver/1.1</ADDRESS></BODY></HTML>", ENTITY_LINE);
@@ -384,8 +390,7 @@ int dir_content(const char *path, int newfd)
     contents = get_dir_content(path);
     if (contents == NULL)
         return ERROR;
-    time_t now = time(NULL);
-    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
+    get_time((time_t)st.st_mtime, timebuf, TIME_BUFF);
     int length = snprintf(response, HTML_BUFF,
                           "%s %s\r\n"
                           "Server: %s\r\n"
@@ -395,7 +400,7 @@ int dir_content(const char *path, int newfd)
                           "Last-Modified: %s\r\n"
                           "Connection: close\r\n\r\n",
                           SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "text/html", strlen(contents), ctime(&st.st_mtime));
-    if (write_to_socket(newfd, response, length) == ERROR) /* Send the header + html */
+    if (write_to_socket(newfd, response, length) == ERROR) /* Send the header */
     {
         free(contents);
         return ERROR;
