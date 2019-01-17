@@ -365,7 +365,7 @@ int set_list(char **contents, char *path, char *fileName)
     return SUCCESS;
 }
 
-/* Get the file list of directory */
+/* Get the content list of directory */
 char *get_dir_content(char *path, DIR *directory)
 {
     int length = 0, counter = 0;
