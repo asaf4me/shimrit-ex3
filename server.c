@@ -304,7 +304,6 @@ int send_file_via_socket(int newfd, char *file)
 {
     int filefd, bytes;
     char response[HTML_BUFF], timebuf[TIME_BUFF];
-
     if ((filefd = open_s(file)) == ERROR)
         return ERROR;
     off_t length = get_size(filefd);
