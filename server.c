@@ -381,6 +381,13 @@ char *get_dir_content(char *path)
              path, path);
     rewinddir(directory);
     char *temp = malloc(strlen(path) + ENTITY_LINE + 2);
+    if (temp == NULL)
+    {
+        closedir(directory);
+        free(contents);
+        free(temp);
+        return NULL;
+    }
     while ((entry = readdir(directory)) != NULL)
     {
         if (path[0] == '/')
