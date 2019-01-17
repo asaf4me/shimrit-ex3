@@ -435,7 +435,7 @@ int dir_content(char *path, int newfd)
         free(contents);
         return ERROR;
     }
-    if (write_to_socket(newfd, contents, strlen(contents)) == ERROR) /* Send the header + html */
+    if (write_to_socket(newfd, contents, strlen(contents)) == ERROR) /* Send the html */
     {
         free(contents);
         return ERROR;
