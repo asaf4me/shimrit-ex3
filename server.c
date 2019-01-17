@@ -333,13 +333,32 @@ int send_file_via_socket(int newfd, char *file)
     return SUCCESS;
 }
 
-/* Get the file list of directory */
-char *get_dir_content(const char *path)
+int set_list(char **contents, char *path, char *fileName)
 {
-    char entity[ENTITY_LINE], fileSize[TIME_BUFF], *contents;
+    struct stat sd;
+    char fileSize[TIME_BUFF], entity[ENTITY_LINE];
+    if (stat(path, &sd) == ERROR)
+    {
+        perror("stat");
+        return ERROR;
+    }
+    if (S_ISDIR(sd.st_mode)) /* Identify for a directory */
+        snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", fileName, fileName, ctime(&sd.st_mtime), "");
+    else if (S_ISREG(sd.st_mode)) /* Identify for a regular file */
+    {
+        snprintf(fileSize, sizeof(fileSize), "%ld bytes", sd.st_size);
+        snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", fileName, fileName, ctime(&sd.st_mtime), fileSize);
+    }
+    strcat(*contents, entity);
+    return SUCCESS;
+}
+
+/* Get the file list of directory */
+char *get_dir_content(char *path)
+{
     int length = 0, counter = 0;
     struct dirent *entry = NULL;
-    struct stat sd;
+    char *contents;
     DIR *directory = opendir_s(path);
     if (directory == NULL)
     {
@@ -361,26 +380,30 @@ char *get_dir_content(const char *path)
                                   "<th>Name</th><th>Last Modified</th><th>Size</th>",
              path, path);
     rewinddir(directory);
+    char *temp = malloc(strlen(path) + ENTITY_LINE + 2);
     while ((entry = readdir(directory)) != NULL)
     {
-        stat(entry->d_name, &sd);
-        if (S_ISDIR(sd.st_mode)) /* Identify for a directory */
-            snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), "");
-        else if (S_ISREG(sd.st_mode)) /* Identify for a regular file */
+        if (path[0] == '/')
+            strcpy(temp, ".");
+        else
+            strcpy(temp, "./");
+        strcat(temp, path);
+        if (set_list(&contents, strcat(temp, entry->d_name), entry->d_name) == ERROR)
         {
-            snprintf(fileSize, sizeof(fileSize), "%ld bytes", sd.st_size);
-            snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", entry->d_name, entry->d_name, ctime(&sd.st_mtime), fileSize);
+            closedir(directory);
+            free(contents);
+            free(temp);
+            return NULL;
         }
-
-        strncat(contents, entity, ENTITY_LINE);
     }
-    strncat(contents, "</table><HR><ADDRESS>webserver/1.1</ADDRESS></BODY></HTML>", ENTITY_LINE);
+    strcat(contents, "</table><HR><ADDRESS>webserver/1.1</ADDRESS></BODY></HTML>");
     closedir(directory);
+    free(temp);
     return contents;
 }
 
 /* Getting all the files within a directory */
-int dir_content(const char *path, int newfd)
+int dir_content(char *path, int newfd)
 {
     struct stat st;
     if (stat(path, &st) == ERROR)
@@ -397,7 +420,7 @@ int dir_content(const char *path, int newfd)
                           "Date: %s\r\n"
                           "Content-Type: %s\r\n"
                           "Content-Length: %ld\r\n"
-                          "Last-Modified: %s\r\n"
+                          "Last-Modified: %s"
                           "Connection: close\r\n\r\n",
                           SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, "text/html", strlen(contents), ctime(&st.st_mtime));
     if (write_to_socket(newfd, response, length) == ERROR) /* Send the header */
