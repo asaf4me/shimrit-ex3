@@ -287,6 +287,7 @@ bool file_permission(char *file)
     return false;
 }
 
+/* Check for directory permission */
 bool dir_permission(char *path)
 {
     struct stat st;
