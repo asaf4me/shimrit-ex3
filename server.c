@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <arpa/inet.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -23,6 +24,7 @@ typedef enum
     true
 } bool;
 
+#define NO_PERMISSON -403
 #define ERROR -1
 #define TIME_BUFF 128
 #define HTML_BUFF 300
@@ -183,7 +185,7 @@ bool is_directory(const char *path)
 {
     struct stat stats;
     stat(path, &stats);
-    if (S_ISDIR(stats.st_mode))
+    if (S_ISDIR(stats.st_mode) && S_IXOTH)
         return true;
     return false;
 }
@@ -271,7 +273,7 @@ int open_s(char *file)
 }
 
 /* Check for file permission */
-bool has_permission(char *file)
+bool file_permission(char *file)
 {
     if (file[0] == '/')
         ++file;
@@ -282,6 +284,17 @@ bool has_permission(char *file)
         return true;
     }
     close(fileFd);
+    return false;
+}
+
+bool dir_permission(char *path)
+{
+    struct stat st;
+    if (stat(path, &st) == ERROR)
+        return ERROR;
+    int execBit = st.st_mode & S_IXOTH;
+    if (execBit == 1)
+        return true;
     return false;
 }
 
@@ -342,29 +355,21 @@ int set_list(char **contents, char *path, char *fileName)
         perror("stat");
         return ERROR;
     }
-    if (S_ISDIR(sd.st_mode)) /* Identify for a directory */
-        snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", fileName, fileName, ctime(&sd.st_mtime), "");
-    else if (S_ISREG(sd.st_mode)) /* Identify for a regular file */
-    {
-        snprintf(fileSize, sizeof(fileSize), "%ld bytes", sd.st_size);
+    snprintf(fileSize, sizeof(fileSize), "%ld bytes", sd.st_size);
+    if (S_ISDIR(sd.st_mode))
+        snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s/</A></td><td>%s</td><td>%s</td></tr>", fileName, fileName, ctime(&sd.st_mtime), "");
+    else if (S_ISREG(sd.st_mode))
         snprintf(entity, ENTITY_LINE, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%s</td></tr>", fileName, fileName, ctime(&sd.st_mtime), fileSize);
-    }
     strcat(*contents, entity);
     return SUCCESS;
 }
 
 /* Get the file list of directory */
-char *get_dir_content(char *path)
+char *get_dir_content(char *path, DIR *directory)
 {
     int length = 0, counter = 0;
     struct dirent *entry = NULL;
     char *contents;
-    DIR *directory = opendir_s(path);
-    if (directory == NULL)
-    {
-        fprintf(stderr, "no such directory %s\n", path);
-        return NULL;
-    }
     while ((entry = readdir(directory)) != NULL) /* Count the number of entities */
         counter++;
     length = (ENTITY_LINE * counter + HTML_BUFF + strlen(path) + 1);
@@ -395,7 +400,8 @@ char *get_dir_content(char *path)
         else
             strcpy(temp, "./");
         strcat(temp, path);
-        if (set_list(&contents, strcat(temp, entry->d_name), entry->d_name) == ERROR)
+        strcat(temp, entry->d_name);
+        if (set_list(&contents, temp, entry->d_name) == ERROR)
         {
             closedir(directory);
             free(contents);
@@ -412,12 +418,23 @@ char *get_dir_content(char *path)
 /* Getting all the files within a directory */
 int dir_content(char *path, int newfd)
 {
+    DIR *directory = opendir_s(path);
     struct stat st;
     if (stat(path, &st) == ERROR)
         return ERROR;
-    char response[HTML_BUFF], timebuf[TIME_BUFF];
-    char *contents;
-    contents = get_dir_content(path);
+    int execBit = st.st_mode & S_IXOTH;
+    if (directory == NULL)
+    {
+        perror("opendir");
+        return NO_PERMISSON;
+    }
+    if (execBit == 0)
+    {
+        closedir(directory);
+        return NO_PERMISSON;
+    }
+    char response[HTML_BUFF], timebuf[TIME_BUFF], *contents;
+    contents = get_dir_content(path, directory);
     if (contents == NULL)
         return ERROR;
     get_time((time_t)st.st_mtime, timebuf, TIME_BUFF);
@@ -449,7 +466,10 @@ char *get_index(char *path, char *file)
 {
     DIR *directory = opendir_s(path);
     if (directory == NULL)
+    {
+        perror("opendir");
         return NULL;
+    }
     struct dirent *entry;
     while ((entry = readdir(directory)) != NULL)
     {
@@ -476,19 +496,28 @@ int path_proccesor(char *path, int newfd)
             server_response(newfd, "302 Found", "Directories must end with a slash", path);
             return SUCCESS;
         }
+        bool execBit = dir_permission(path);
+        if (execBit == false)
+        {
+            server_response(newfd, "403 Forbidden", "Access denied", "");
+            return SUCCESS;
+        }
         if ((index = get_index(path, "index.html")) != NULL) /* Return index.html within the folder */
         {
             if (send_file_via_socket(newfd, index) == ERROR)
                 server_response(newfd, "500 Internal Server Error", "Some server side error", "");
             return SUCCESS;
         }
-        if (dir_content(path, newfd) == ERROR) /* Return the content dir */
+        int res = dir_content(path, newfd);
+        if (res == ERROR) /* Return the content dir */
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
+        else if (res == NO_PERMISSON)
+            server_response(newfd, "403 Forbidden", "Access denied", "");
         return SUCCESS;
     }
     if (is_file(path) == true) /* If path is a file */
     {
-        if (has_permission(path) == false)
+        if (file_permission(path) == false)
         {
             server_response(newfd, "403 Forbidden", "Access denied", "");
             return SUCCESS;
@@ -497,7 +526,7 @@ int path_proccesor(char *path, int newfd)
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
         return SUCCESS;
     }
-    if ((is_file(path) == false || has_permission(path) == false)) /* If path is not a regular file or file has no read permission */
+    if ((is_file(path) == false || file_permission(path) == false)) /* If path is not a regular file or file has no read permission */
     {
         server_response(newfd, "403 Forbidden", "Access denied", "");
         return SUCCESS;
@@ -626,7 +655,8 @@ int main(int argc, char *argv[])
     }
 
     server.sin_port = htons(port);
-    server.sin_addr.s_addr = htonl(INADDR_ANY);
+    // server.sin_addr.s_addr = htonl(INADDR_ANY);
+    server.sin_addr.s_addr = inet_addr("192.168.1.22");
     if (bind(fd, (struct sockaddr *)&server, sizeof(server)) < 0)
     {
         perror("bind");
@@ -641,7 +671,8 @@ int main(int argc, char *argv[])
         destroy_threadpool(threadpool);
         return EXIT_FAILURE;
     }
-    printf("Server is listening on %d:%d\n", server.sin_addr.s_addr, port);
+    char ip[32];
+    printf("Server is listening on %s:%d\n", inet_ntop(AF_INET, &(server.sin_addr.s_addr), ip, 32), port);
     while (true)
     {
         if (counter >= maxClients)
