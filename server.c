@@ -347,6 +347,7 @@ int send_file_via_socket(int newfd, char *file)
     return SUCCESS;
 }
 
+/* Set item to the list */
 int set_list(char **contents, char *path, char *fileName)
 {
     struct stat sd;
