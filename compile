@@ -1,4 +1,4 @@
 gcc -c server.c -o server.o -Wall -Wvla -g -lpthread 
 gcc -c threadpool.c -o threadpool.o -Wall -Wvla -g -lpthread
-gcc threadpool.o server.o -o run -Wall -Wvla -g -lpthread
+gcc threadpool.o server.o -o server -Wall -Wvla -g -lpthread
 rm threadpool.o server.o
