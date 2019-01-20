@@ -504,7 +504,6 @@ bool recursive_permission(char *path)
 /* Handle all the path proccess logic */
 int path_proccesor(char *path, int newfd)
 {
-    printf("true is %d , false is %d , func return is %d\n",true,false,recursive_permission(path));
     char *index = NULL;
     if (is_directory(path) == true) /* If path is a directory */
     {
