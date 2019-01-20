@@ -292,7 +292,10 @@ bool dir_permission(char *path)
 {
     struct stat st;
     if (stat(path, &st) == ERROR)
+    {
+        perror("stat");
         return false;
+    }
     int execBit = st.st_mode & S_IXOTH;
     if (execBit == 1)
         return true;
@@ -489,16 +492,24 @@ char *get_index(char *path, char *file)
 /* Identify if every directory in the path have exec permission */
 bool recursive_permission(char *path)
 {
-    char *ptr = strchr(path,'/');
-    if(ptr == NULL)
-        return true;
-    while(ptr != NULL && strcmp(ptr,"/") != 0)
+    char posix[PATH_MAX];
+    memset(posix,0,PATH_MAX);
+    int i = 0;
+    bool res = true;
+    while(i < strlen(path))
     {
-        if(dir_permission(ptr) == false)
-            return false;
-        ptr = strchr(ptr,'/');
+        if (path[i] != '/')
+            posix[i] = path[i];
+        else
+        {
+            posix[i] = '/';
+            res = dir_permission(posix);
+            if(res == false)
+                break;       
+        } 
+        i++;
     }
-    return true;
+    return res;
 }
 
 /* Handle all the path proccess logic */
@@ -512,8 +523,7 @@ int path_proccesor(char *path, int newfd)
             server_response(newfd, "302 Found", "Directories must end with a slash", path);
             return SUCCESS;
         }
-        bool execBit = dir_permission(path);
-        if (execBit == false || recursive_permission(path) == false)
+        if (recursive_permission(path) == false)
         {
             server_response(newfd, "403 Forbidden", "Access denied", "");
             return SUCCESS;
@@ -601,8 +611,7 @@ int process_request(void *arg)
         {
             perror("read");
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
-            clean(newfd, arg);
-            return ERROR;
+            goto CLOSE; 
         }
         if (strchr(buffer, '\n') != NULL) /* Identify the end of the first line */
             break;
@@ -611,28 +620,25 @@ int process_request(void *arg)
     if (parse == ALLOC_ERROR)
     {
         server_response(newfd, "500 Internal Server Error", "Some server side error", "");
-        clean(newfd, arg);
-        return ERROR;
+        goto CLOSE; 
     }
     if (parse == ERROR) /* Bad requast -> HTTP_400 */
     {
         server_response(newfd, "400 Bad Request", "Bad Request", "");
-        clean(newfd, arg);
-        return ERROR;
+        goto CLOSE; 
     }
     if (strcmp(method, "POST") == 0) /* Only support the get method */
     {
         server_response(newfd, "501 Not supported", "Method is not supported", "");
-        clean(newfd, arg);
-        return ERROR;
+        goto CLOSE;
     }
     if (is_exist(++path) == false && strcmp(--path, "/") != 0) /* Return error -> 404 not found */
     {
         server_response(newfd, "404 Not Found", "File not found", "");
-        clean(newfd, arg);
-        return ERROR;
+        goto CLOSE; 
     }
     path_proccesor(path, newfd);
+CLOSE:
     clean(newfd, arg);
     return !ERROR;
 }
