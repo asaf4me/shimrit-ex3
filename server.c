@@ -292,7 +292,7 @@ bool dir_permission(char *path)
 {
     struct stat st;
     if (stat(path, &st) == ERROR)
-        return ERROR;
+        return false;
     int execBit = st.st_mode & S_IXOTH;
     if (execBit == 1)
         return true;
@@ -486,9 +486,25 @@ char *get_index(char *path, char *file)
     return NULL;
 }
 
+/* Identify if every directory in the path have exec permission */
+bool recursive_permission(char *path)
+{
+    char *ptr = strchr(path,'/');
+    if(ptr == NULL)
+        return true;
+    while(ptr != NULL && strcmp(ptr,"/") != 0)
+    {
+        if(dir_permission(ptr) == false)
+            return false;
+        ptr = strchr(ptr,'/');
+    }
+    return true;
+}
+
 /* Handle all the path proccess logic */
 int path_proccesor(char *path, int newfd)
 {
+    printf("true is %d , false is %d , func return is %d\n",true,false,recursive_permission(path));
     char *index = NULL;
     if (is_directory(path) == true) /* If path is a directory */
     {
@@ -498,7 +514,7 @@ int path_proccesor(char *path, int newfd)
             return SUCCESS;
         }
         bool execBit = dir_permission(path);
-        if (execBit == false)
+        if (execBit == false || recursive_permission(path) == false)
         {
             server_response(newfd, "403 Forbidden", "Access denied", "");
             return SUCCESS;
@@ -527,7 +543,7 @@ int path_proccesor(char *path, int newfd)
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
         return SUCCESS;
     }
-    if ((is_file(path) == false || file_permission(path) == false)) /* If path is not a regular file or file has no read permission */
+    if ((is_file(path) == false || file_permission(path) == false) || dir_permission(path) == false) /* If path is not a regular file or file has no read permission */
     {
         server_response(newfd, "403 Forbidden", "Access denied", "");
         return SUCCESS;
@@ -657,7 +673,7 @@ int main(int argc, char *argv[])
 
     server.sin_port = htons(port);
     // server.sin_addr.s_addr = htonl(INADDR_ANY);
-    server.sin_addr.s_addr = inet_addr("192.168.1.22");
+    server.sin_addr.s_addr = inet_addr("192.168.2.65");
     if (bind(fd, (struct sockaddr *)&server, sizeof(server)) < 0)
     {
         perror("bind");
