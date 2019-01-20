@@ -534,8 +534,8 @@ int path_proccesor(char *path, int newfd)
                 server_response(newfd, "500 Internal Server Error", "Some server side error", "");
             return SUCCESS;
         }
-        int res = dir_content(path, newfd);
-        if (res == ERROR) /* Return the content dir */
+        int res = dir_content(path, newfd); /* Return the content dir */
+        if (res == ERROR) 
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
         else if (res == NO_PERMISSON)
             server_response(newfd, "403 Forbidden", "Access denied", "");
@@ -712,7 +712,6 @@ int main(int argc, char *argv[])
         dispatch(threadpool, process_request, newfd);
         counter++;
     }
-
     /* Destructors */
     destroy_threadpool(threadpool);
     shutdown(fd, SHUT_RDWR);
