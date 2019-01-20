@@ -57,8 +57,6 @@ typedef enum
     "</BODY>"                        \
     "</HTML>"
 
-#define DIR_CONTENT_TEMPLATE
-
 /* END DEFINES */
 
 /* Wrinting to the socket */
@@ -86,6 +84,7 @@ void usage_message()
     printf("Usage: server <port> <pool-size> <max-number-of-request>\n");
 }
 
+/* Handle the moved respond */
 char *make_302(const char *title, const char *path, const char *http)
 {
     char timebuf[TIME_BUFF];
@@ -108,6 +107,7 @@ char *make_302(const char *title, const char *path, const char *http)
     return html;
 }
 
+/* Handle all the other respond's */
 void *regular_reponse(const char *title, const char *http)
 {
     char timebuf[TIME_BUFF];
@@ -209,7 +209,7 @@ bool is_exist(const char *path)
     return true;
 }
 
-/* Get the size of the file using lseek */
+/* Get the size of the file */
 off_t get_size(int file)
 {
     off_t currentPos = lseek(file, (size_t)0, SEEK_CUR);
