@@ -496,6 +496,7 @@ bool recursive_permission(char *path)
     memset(posix,0,PATH_MAX);
     int i = 0;
     size_t length = strlen(path);
+    bool res = true;
     while (i < length)
     {
         if (path[i] != '/')
