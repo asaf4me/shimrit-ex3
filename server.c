@@ -354,6 +354,8 @@ int set_list(char **contents, char *path, char *fileName)
 {
     struct stat sd;
     char fileSize[TIME_BUFF], entity[ENTITY_LINE];
+    memset(fileSize,0,TIME_BUFF);
+    memset(entity,0,ENTITY_LINE);
     if (stat(path, &sd) == ERROR)
     {
         perror("stat");
@@ -380,6 +382,7 @@ char *get_dir_content(char *path, DIR *directory)
     contents = malloc(length);
     if (contents == NULL)
         return NULL;
+    memset(contents,0,length);
     snprintf(contents, HTML_BUFF, "<HTML>"
                                   "<HEAD><TITLE>Index of %s</TITLE></HEAD>"
                                   "<BODY>"
@@ -438,6 +441,8 @@ int dir_content(char *path, int newfd)
         return NO_PERMISSON;
     }
     char response[HTML_BUFF], timebuf[TIME_BUFF], *contents;
+    memset(response,0,HTML_BUFF);
+    memset(timebuf,0,TIME_BUFF);
     contents = get_dir_content(path, directory);
     if (contents == NULL)
         return ERROR;
