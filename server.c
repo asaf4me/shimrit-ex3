@@ -57,6 +57,8 @@ typedef enum
     "</BODY>"                        \
     "</HTML>"
 
+#define DIR_CONTENT_TEMPLATE
+
 /* END DEFINES */
 
 /* Wrinting to the socket */
@@ -84,7 +86,6 @@ void usage_message()
     printf("Usage: server <port> <pool-size> <max-number-of-request>\n");
 }
 
-/* Handle the moved respond */
 char *make_302(const char *title, const char *path, const char *http)
 {
     char timebuf[TIME_BUFF];
@@ -107,7 +108,6 @@ char *make_302(const char *title, const char *path, const char *http)
     return html;
 }
 
-/* Handle all the other respond's */
 void *regular_reponse(const char *title, const char *http)
 {
     char timebuf[TIME_BUFF];
@@ -209,7 +209,7 @@ bool is_exist(const char *path)
     return true;
 }
 
-/* Get the size of the file */
+/* Get the size of the file using lseek */
 off_t get_size(int file)
 {
     off_t currentPos = lseek(file, (size_t)0, SEEK_CUR);
@@ -287,15 +287,11 @@ bool file_permission(char *file)
     return false;
 }
 
-/* Check for directory permission */
 bool dir_permission(char *path)
 {
     struct stat st;
     if (stat(path, &st) == ERROR)
-    {
-        perror("stat");
-        return false;
-    }
+        return ERROR;
     int execBit = st.st_mode & S_IXOTH;
     if (execBit == 1)
         return true;
@@ -305,8 +301,9 @@ bool dir_permission(char *path)
 /* Transfer file via socket */
 int send_file_via_socket(int newfd, char *file)
 {
-    int filefd, bytes;
+    int filefd, bytes, textLength;
     char response[HTML_BUFF], timebuf[TIME_BUFF];
+
     if ((filefd = open_s(file)) == ERROR)
         return ERROR;
     off_t length = get_size(filefd);
@@ -315,16 +312,23 @@ int send_file_via_socket(int newfd, char *file)
         close(filefd);
         return ERROR;
     }
+    time_t now = time(NULL);
+    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
     char *mime = get_mime_type(file);
     if (mime == NULL)
     {
-        close(filefd);
-        fprintf(stderr, "unknown mime: %s.\n", file);
-        return ERROR;
+        textLength = snprintf(response, sizeof(response), "%s %s\r\n"
+                                                          "Server: %s\r\n"
+                                                          "Date: %s\r\n"
+                                                          "Content-Length: %ld\r\n"
+                                                          "Connection: close\r\n\r\n"
+                                                          "%s",
+                              SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, length, "");
     }
-    time_t now = time(NULL);
-    strftime(timebuf, sizeof(timebuf), RFC1123FMT, gmtime(&now));
-    int textLength = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, mime, length, "");
+    else
+    {
+        textLength = snprintf(response, sizeof(response), HTTP_HEADER, SERVER_HTTP, "200 OK", SERVER_PROTOCOL, timebuf, mime, length, "");
+    }  
     if (write_to_socket(newfd, response, textLength) == ERROR)
         return ERROR;
     char *indexHtml = malloc(length * sizeof(char) + 1);
@@ -349,13 +353,10 @@ int send_file_via_socket(int newfd, char *file)
     return SUCCESS;
 }
 
-/* Set item to the list */
 int set_list(char **contents, char *path, char *fileName)
 {
     struct stat sd;
     char fileSize[TIME_BUFF], entity[ENTITY_LINE];
-    memset(fileSize,0,TIME_BUFF);
-    memset(entity,0,ENTITY_LINE);
     if (stat(path, &sd) == ERROR)
     {
         perror("stat");
@@ -370,7 +371,7 @@ int set_list(char **contents, char *path, char *fileName)
     return SUCCESS;
 }
 
-/* Get the content list of directory */
+/* Get the file list of directory */
 char *get_dir_content(char *path, DIR *directory)
 {
     int length = 0, counter = 0;
@@ -382,7 +383,6 @@ char *get_dir_content(char *path, DIR *directory)
     contents = malloc(length);
     if (contents == NULL)
         return NULL;
-    memset(contents,0,length);
     snprintf(contents, HTML_BUFF, "<HTML>"
                                   "<HEAD><TITLE>Index of %s</TITLE></HEAD>"
                                   "<BODY>"
@@ -441,8 +441,6 @@ int dir_content(char *path, int newfd)
         return NO_PERMISSON;
     }
     char response[HTML_BUFF], timebuf[TIME_BUFF], *contents;
-    memset(response,0,HTML_BUFF);
-    memset(timebuf,0,TIME_BUFF);
     contents = get_dir_content(path, directory);
     if (contents == NULL)
         return ERROR;
@@ -498,7 +496,7 @@ char *get_index(char *path, char *file)
 bool recursive_permission(char *path)
 {
     char posix[PATH_MAX];
-    memset(posix,0,PATH_MAX);
+    memset(posix, 0, PATH_MAX);
     int i = 0;
     size_t length = strlen(path);
     bool res = true;
@@ -510,9 +508,9 @@ bool recursive_permission(char *path)
         {
             posix[i] = '/';
             res = dir_permission(posix);
-            if(res == false)
-                break;       
-        } 
+            if (res == false)
+                break;
+        }
         i++;
     }
     return res;
@@ -540,8 +538,8 @@ int path_proccesor(char *path, int newfd)
                 server_response(newfd, "500 Internal Server Error", "Some server side error", "");
             return SUCCESS;
         }
-        int res = dir_content(path, newfd); /* Return the content dir */
-        if (res == ERROR) 
+        int res = dir_content(path, newfd);
+        if (res == ERROR) /* Return the content dir */
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
         else if (res == NO_PERMISSON)
             server_response(newfd, "403 Forbidden", "Access denied", "");
@@ -558,7 +556,7 @@ int path_proccesor(char *path, int newfd)
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
         return SUCCESS;
     }
-    if ((is_file(path) == false || file_permission(path) == false) || dir_permission(path) == false) /* If path is not a regular file or file has no read permission */
+    if ((is_file(path) == false || file_permission(path) == false)) /* If path is not a regular file or file has no read permission */
     {
         server_response(newfd, "403 Forbidden", "Access denied", "");
         return SUCCESS;
@@ -617,7 +615,7 @@ int process_request(void *arg)
         {
             perror("read");
             server_response(newfd, "500 Internal Server Error", "Some server side error", "");
-            goto CLOSE; 
+            goto CLOSE;
         }
         if (strchr(buffer, '\n') != NULL) /* Identify the end of the first line */
             break;
@@ -626,12 +624,12 @@ int process_request(void *arg)
     if (parse == ALLOC_ERROR)
     {
         server_response(newfd, "500 Internal Server Error", "Some server side error", "");
-        goto CLOSE; 
+        goto CLOSE;
     }
     if (parse == ERROR) /* Bad requast -> HTTP_400 */
     {
         server_response(newfd, "400 Bad Request", "Bad Request", "");
-        goto CLOSE; 
+        goto CLOSE;
     }
     if (strcmp(method, "POST") == 0) /* Only support the get method */
     {
@@ -641,7 +639,7 @@ int process_request(void *arg)
     if (is_exist(++path) == false && strcmp(--path, "/") != 0) /* Return error -> 404 not found */
     {
         server_response(newfd, "404 Not Found", "File not found", "");
-        goto CLOSE; 
+        goto CLOSE;
     }
     path_proccesor(path, newfd);
 CLOSE:
@@ -684,7 +682,7 @@ int main(int argc, char *argv[])
 
     server.sin_port = htons(port);
     // server.sin_addr.s_addr = htonl(INADDR_ANY);
-    server.sin_addr.s_addr = inet_addr("192.168.2.65");
+    server.sin_addr.s_addr = inet_addr("192.168.1.22");
     if (bind(fd, (struct sockaddr *)&server, sizeof(server)) < 0)
     {
         perror("bind");
@@ -718,6 +716,7 @@ int main(int argc, char *argv[])
         dispatch(threadpool, process_request, newfd);
         counter++;
     }
+
     /* Destructors */
     destroy_threadpool(threadpool);
     shutdown(fd, SHUT_RDWR);
