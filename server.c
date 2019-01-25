@@ -287,6 +287,7 @@ bool file_permission(char *file)
     return false;
 }
 
+/* Checking for execution bit */
 bool dir_permission(char *path)
 {
     struct stat st;
