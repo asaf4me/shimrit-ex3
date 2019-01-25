@@ -353,6 +353,7 @@ int send_file_via_socket(int newfd, char *file)
     return SUCCESS;
 }
 
+/* Add directory item to the HTML */
 int set_list(char **contents, char *path, char *fileName)
 {
     struct stat sd;
