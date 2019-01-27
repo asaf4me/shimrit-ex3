@@ -304,7 +304,8 @@ int send_file_via_socket(int newfd, char *file)
 {
     int filefd, bytes, textLength;
     char response[HTML_BUFF], timebuf[TIME_BUFF];
-
+    memset(response, 0, HTML_BUFF);
+    memset(timebuf, 0, TIME_BUFF);
     if ((filefd = open_s(file)) == ERROR)
         return ERROR;
     off_t length = get_size(filefd);
@@ -359,6 +360,8 @@ int set_list(char **contents, char *path, char *fileName)
 {
     struct stat sd;
     char fileSize[TIME_BUFF], entity[ENTITY_LINE];
+    memset(fileSize, 0, TIME_BUFF);
+    memset(entity, 0, ENTITY_LINE);
     if (stat(path, &sd) == ERROR)
     {
         perror("stat");
@@ -385,6 +388,7 @@ char *get_dir_content(char *path, DIR *directory)
     contents = malloc(length);
     if (contents == NULL)
         return NULL;
+    memset(contents, 0, length);
     snprintf(contents, HTML_BUFF, "<HTML>"
                                   "<HEAD><TITLE>Index of %s</TITLE></HEAD>"
                                   "<BODY>"
@@ -402,6 +406,7 @@ char *get_dir_content(char *path, DIR *directory)
         free(temp);
         return NULL;
     }
+    memset(temp, 0, strlen(path) + ENTITY_LINE + 2);
     while ((entry = readdir(directory)) != NULL)
     {
         if (path[0] == '/')
@@ -442,7 +447,9 @@ int dir_content(char *path, int newfd)
         closedir(directory);
         return NO_PERMISSON;
     }
-    char response[HTML_BUFF], timebuf[TIME_BUFF], *contents;
+    char response[HTML_BUFF], timebuf[TIME_BUFF], *contents = NULL;
+    memset(response, 0, HTML_BUFF);
+    memset(timebuf, 0, TIME_BUFF);
     contents = get_dir_content(path, directory);
     if (contents == NULL)
         return ERROR;
@@ -683,8 +690,8 @@ int main(int argc, char *argv[])
     }
 
     server.sin_port = htons(port);
-    // server.sin_addr.s_addr = htonl(INADDR_ANY);
-    server.sin_addr.s_addr = inet_addr("192.168.1.22");
+    server.sin_addr.s_addr = htonl(INADDR_ANY);
+    // server.sin_addr.s_addr = inet_addr("192.168.1.22");
     if (bind(fd, (struct sockaddr *)&server, sizeof(server)) < 0)
     {
         perror("bind");
