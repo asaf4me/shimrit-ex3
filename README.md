@@ -27,7 +27,7 @@ the file compiled with:
     gcc threadpool.o server.o -o server -Wall -Wvla -g -lpthread  <br />
 
 At any usage fail: the out will be: <br />
-printf("Usage: server <port> <pool-size> <max-number-of-request>\n"); <br />
+printf("Usage: server <port> <pool-size> <max-number-of-request>\n")
 
 To run the server do the following: <br />
 ./server PORT NUMBER_OF_THREADS MAX_REQUAST <br />
