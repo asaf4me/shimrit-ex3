@@ -22,15 +22,15 @@ At the ex3.tar file you will find 3 files: <br />
 - README <br />
 
 the file compiled with:
-    gcc -c server.c -o server.o -Wall -Wvla -g -lpthread  <br />
-    gcc -c threadpool.c -o threadpool.o -Wall -Wvla -g -lpthread  <br />
-    gcc threadpool.o server.o -o server -Wall -Wvla -g -lpthread  <br />
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gcc -c server.c -o server.o -Wall -Wvla -g -lpthread  <br />
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gcc -c threadpool.c -o threadpool.o -Wall -Wvla -g -lpthread  <br />
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gcc threadpool.o server.o -o server -Wall -Wvla -g -lpthread  <br />
 
 At any usage fail: the out will be: <br />
-printf("Usage: server <port> <pool-size> <max-number-of-request>\n")
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printf("Usage: server <port> <pool-size> <max-number-of-request>\n")
 
 To run the server do the following: <br />
-./server PORT NUMBER_OF_THREADS MAX_REQUAST <br />
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;./server PORT NUMBER_OF_THREADS MAX_REQUAST <br />
 
 NOTICE: <br />
 At the main function, lines: 699, 714, 715 ar comment out, this lines will allow you to test the server on LAN IP, if you want to do so please: <br />
