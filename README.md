@@ -21,7 +21,7 @@ At the ex3.tar file you will find 3 files: <br />
 - server.c <br />
 - README <br />
 
-the file compiled with:
+the file compiled with:<br />
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gcc -c server.c -o server.o -Wall -Wvla -g -lpthread  <br />
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gcc -c threadpool.c -o threadpool.o -Wall -Wvla -g -lpthread  <br />
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gcc threadpool.o server.o -o server -Wall -Wvla -g -lpthread  <br />
