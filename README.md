@@ -33,8 +33,8 @@ To run the server do the following: <br />
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;./server PORT NUMBER_OF_THREADS MAX_REQUAST <br />
 
 NOTICE: <br />
-At the main function, lines: 699, 714, 715 are comment out, this lines will allow you to test the server on LAN IP, if you want to do so please: <br />
-comment out the following line, add you LAN IP adrees instead of mine, and run the binary again. <br />
+At the main function, lines: 699, 714, 715 are comment out, this lines will allow you to test the server on LAN Network, if you want to do so please: <br />
+comment out the following line, add your LAN IP adrees instead of mine, and run the binary again. <br />
 
 The project can be fount at my git: <br />
 https://github.com/asaf4me/shimrit-ex3 <br />
